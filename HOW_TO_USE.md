@@ -14,6 +14,7 @@ d:\workspace\mkxp-mv\
     ├── electron                    # aarch64 실행 바이너리
     ├── main.js                     # 창/디스플레이 관리 스크립트
     ├── preload.js                  # Anbernic 1:1 실측 패드 매핑 및 NW.js 심
+    ├── config.json                 # ⭐ 화면 해상도, 전체화면, 배율 설정
     ├── package.json                # 엔진 설정 매니페스트
     ├── rpgmakermv.gptk              # 포트마스터 표준 키패드 매핑
     ├── port.json, fix_case.py...   # 포트마스터 메타데이터 및 유틸리티
@@ -80,5 +81,23 @@ SD카드:/roms/ports/
 ---
 
 ## 💡 유의사항 및 팁
+- **화면 해상도 및 옵션 설정 (`config.json`)**:
+  - 기본적으로 기기 디스플레이 해상도를 자동 감지(`autoDetectResolution: true`)합니다.
+  - RG VITA Pro(1080p), RG VITA/TrimUI(720p), RG505(544p) 등 기기 특성에 맞춰 수동 제어하고 싶다면 `config.json`을 열어 수정할 수 있습니다:
+    ```json
+    {
+      "width": 1920,
+      "height": 1080,
+      "fullscreen": true,
+      "autoDetectResolution": true,
+      "forceDeviceScaleFactor": 1.0,
+      "scaling": "fit",
+      "pixelated": true,
+      "disableGpu": true
+    }
+    ```
+    * `"scaling": "fit"` : 원래 게임 비율(도트 비율)을 유지하며 화면 상하(1080p)를 꽉 채우고 화면 정중앙에 배치 (추천)
+    * `"scaling": "fill"` : 좌우 블랙바 없이 16:9 화면 전체에 완전히 가득 채움 (풀 스트레칭)
 - **대소문자 자동 교정**: Windows에서 제작된 게임의 대소문자 불일치 문제는 내장된 `fix_case.py`가 실행 시 자동으로 검사하여 오류를 방지합니다.
 - **게임 백업**: `rpgmakermv` 마스터 템플릿 폴더를 압축해서 보관해 두시면 언제든 새 게임을 무제한으로 찍어내실 수 있습니다.
+

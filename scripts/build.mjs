@@ -98,7 +98,8 @@ async function build() {
     'fix_case.py',
     'rpgmakermv.gptk',
     'port.json',
-    'package.json'
+    'package.json',
+    'config.json'
   ];
 
   for (const file of templateFiles) {

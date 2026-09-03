@@ -85,12 +85,11 @@ pm_platform_helper "$GAME_ROOT/electron" >/dev/null
 
 FLAGS="--ozone-platform=wayland \
        --enable-features=UseOzonePlatform \
-       --disable-gpu-sandbox \
-       --ignore-gpu-blocklist \
-       --enable-gpu-rasterization \
-       --enable-zero-copy \
+       --disable-gpu \
+       --disable-gpu-compositing \
        --disable-dev-shm-usage \
        --no-sandbox \
+       --high-dpi-support=1 \
        --disable-features=TouchpadAndWheelScrollLatching \
        --autoplay-policy=no-user-gesture-required"
 
