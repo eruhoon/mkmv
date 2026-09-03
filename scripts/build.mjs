@@ -96,7 +96,7 @@ async function build() {
     'main.js',
     'preload.js',
     'fix_case.py',
-    'rpgmakermv.gptk',
+    'keymap.gptk',
     'port.json',
     'package.json',
     'config.json'
@@ -111,8 +111,8 @@ async function build() {
   }
 
   // Copy launcher to dist root
-  const launcherSrc = path.join(TEMPLATE_DIR, 'RPG Maker MV.sh');
-  const launcherDest = path.join(DIST_DIR, 'RPG Maker MV.sh');
+  const launcherSrc = path.join(TEMPLATE_DIR, 'mkmv.sh');
+  const launcherDest = path.join(DIST_DIR, 'mkmv.sh');
   fs.copyFileSync(launcherSrc, launcherDest);
 
   // Ensure www directory with .gitkeep

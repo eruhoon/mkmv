@@ -80,7 +80,7 @@ chmod +x "$GAME_ROOT/electron" 2>/dev/null
 chmod +x "$GAME_ROOT/gptokeyb" 2>/dev/null
 
 # GPTK 실행 및 프로세스 바인딩 (SELECT + START 강제 종료 지원)
-$GPTOKEYB "electron" -c "./rpgmakermv.gptk" &
+$GPTOKEYB "electron" -c "./keymap.gptk" &
 pm_platform_helper "$GAME_ROOT/electron" >/dev/null
 
 FLAGS="--ozone-platform=wayland \

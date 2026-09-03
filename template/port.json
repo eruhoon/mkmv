@@ -2,7 +2,7 @@
   "version": 1,
   "name": "rpgmakermv.zip",
   "items": [
-    "RPG Maker MV.sh",
+    "mkmv.sh",
     "rpgmakermv"
   ],
   "items_opt": [],

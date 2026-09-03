@@ -8,7 +8,7 @@
 
 ```text
 d:\workspace\mkxp-mv\
-├── RPG Maker MV.sh                 # 범용 런처 스크립트 (자동 폴더 매칭 지원)
+├── mkmv.sh                         # 범용 런처 스크립트 (자동 폴더 매칭 지원)
 ├── HOW_TO_USE.md                   # 본 사용 설명서
 └── rpgmakermv/                     # ⭐ 마스터 템플릿 폴더 (필수 런타임 내장)
     ├── electron                    # aarch64 실행 바이너리
@@ -16,7 +16,7 @@ d:\workspace\mkxp-mv\
     ├── preload.js                  # Anbernic 1:1 실측 패드 매핑 및 NW.js 심
     ├── config.json                 # ⭐ 화면 해상도, 전체화면, 배율 설정
     ├── package.json                # 엔진 설정 매니페스트
-    ├── rpgmakermv.gptk              # 포트마스터 표준 키패드 매핑
+    ├── keymap.gptk                 # 포트마스터 표준 키패드 매핑
     ├── port.json, fix_case.py...   # 포트마스터 메타데이터 및 유틸리티
     ├── locales/, resources/...     # 필수 런타임 에셋
     └── www/                        # ⭐ [게임 파일(www)을 넣는 곳]
@@ -29,7 +29,7 @@ d:\workspace\mkxp-mv\
 ### 1단계. 템플릿 복사 및 이름 변경
 새로 넣고 싶은 게임 이름(예: `MyGame`)으로 파일과 폴더를 복제합니다.
 
-1. `RPG Maker MV.sh` 파일을 복사하여 **`MyGame.sh`** 로 이름을 바꿉니다.
+1. `mkmv.sh` 파일을 복사하여 **`MyGame.sh`** 로 이름을 바꿉니다.
 2. `rpgmakermv` 폴더를 복사하여 **`MyGame`** 으로 이름을 바꿉니다.
 
 > 💡 **스마트 자동 매칭**: 런처 스크립트가 `.sh` 파일명과 동일한 폴더를 자동으로 찾아서 연결하므로, 스크립트 내부를 수정하지 않아도 이름만 같으면 알아서 구동됩니다!
