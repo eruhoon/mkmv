@@ -110,6 +110,14 @@ async function build() {
     }
   }
 
+  // Copy template fonts directory if exists
+  const templateFontsDir = path.join(TEMPLATE_DIR, 'fonts');
+  const distFontsDir = path.join(DIST_APP_DIR, 'fonts');
+  if (fs.existsSync(templateFontsDir)) {
+    fs.cpSync(templateFontsDir, distFontsDir, { recursive: true });
+    console.log('[mkmv] Copied template/fonts to dist/rpgmakermv/fonts.');
+  }
+
   // Copy launcher to dist root
   const launcherSrc = path.join(TEMPLATE_DIR, 'mkmv.sh');
   const launcherDest = path.join(DIST_DIR, 'mkmv.sh');

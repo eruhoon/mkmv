@@ -217,7 +217,7 @@ function patchGraphics() {
     };
   }
 
-  if (typeof window.Graphics._updateAllElements === 'function') {
+  if (typeof window.Graphics._updateAllElements === 'function' && window.Graphics._canvas && window.Graphics._errorPrinter) {
     window.Graphics._updateAllElements();
   }
 }
@@ -234,7 +234,7 @@ setTimeout(() => clearInterval(gTimer), 10000);
 window.addEventListener('load', () => {
   setTimeout(() => {
     patchGraphics();
-    if (window.Graphics && typeof window.Graphics._updateAllElements === 'function') {
+    if (window.Graphics && typeof window.Graphics._updateAllElements === 'function' && window.Graphics._canvas && window.Graphics._errorPrinter) {
       window.Graphics._updateAllElements();
     }
     window.dispatchEvent(new Event('resize'));
@@ -242,7 +242,98 @@ window.addEventListener('load', () => {
 });
 
 window.addEventListener('resize', () => {
-  if (window.Graphics && typeof window.Graphics._updateAllElements === 'function') {
+  if (window.Graphics && typeof window.Graphics._updateAllElements === 'function' && window.Graphics._canvas && window.Graphics._errorPrinter) {
     window.Graphics._updateAllElements();
   }
 });
+
+// 6. Noto Sans CJK KR 자동 폴백 폰트 시스템
+function setupFallbackFont() {
+  const possiblePaths = [
+    // 1순위: 러너 자체 번들 폰트 (자체 완결형)
+    path.join(__dirname, 'fonts', 'NotoSansCJKkr-Regular.otf'),
+    path.join(__dirname, 'fonts', 'NotoSansKR-Regular.otf'),
+    path.join(__dirname, 'fonts', 'NotoSansKR-Regular.ttf'),
+    path.join(wwwPath, 'fonts', 'NotoSansCJKkr-Regular.otf'),
+    path.join(wwwPath, 'fonts', 'NotoSansKR-Regular.otf'),
+    path.join(wwwPath, 'fonts', 'NotoSansKR-Regular.ttf'),
+    path.join(wwwPath, 'fonts', 'LINESeedKR-Rg.ttf'),
+
+    // 2순위: 런처 스크립트가 전달한 포트마스터 동적 홈 경로 ($controlfolder)
+    process.env.PORTMASTER_HOME ? path.join(process.env.PORTMASTER_HOME, 'resources', 'NotoSansKR-Regular.otf') : null,
+
+    // 3순위: 기기 OS별(Knulli/Batocera, ROCKNIX, ArkOS, AmberELEC, muOS) 알려진 공유 경로
+    '/userdata/roms/ports/PortMaster/resources/NotoSansKR-Regular.otf', // Knulli / Batocera
+    '/roms/ports/PortMaster/resources/NotoSansKR-Regular.otf',          // ROCKNIX
+    '/opt/system/Tools/PortMaster/resources/NotoSansKR-Regular.otf',    // ArkOS
+    '/opt/tools/PortMaster/resources/NotoSansKR-Regular.otf',           // AmberELEC
+    '/mnt/SDCARD/App/PortMaster/resources/NotoSansKR-Regular.otf',      // muOS
+    '/roms2/ports/PortMaster/resources/NotoSansKR-Regular.otf'          // 2nd SD Card
+  ].filter(Boolean);
+
+  const fontPath = possiblePaths.find(p => fs.existsSync(p));
+  if (!fontPath) {
+    console.log('[mkmv-preload] No fallback CJK font file found');
+    return;
+  }
+
+  try {
+    const fontBuf = fs.readFileSync(fontPath);
+    const fontArrayBuffer = fontBuf.buffer.slice(fontBuf.byteOffset, fontBuf.byteOffset + fontBuf.byteLength);
+
+    const fontFamilies = [
+      'Noto Sans CJK KR',
+      'NotoSansCJKkr',
+      'Dotum',
+      'AppleGothic',
+      'SimHei',
+      'Heiti TC'
+    ];
+
+    fontFamilies.forEach(family => {
+      try {
+        const face = new FontFace(family, fontArrayBuffer);
+        face.load().then(loadedFace => {
+          document.fonts.add(loadedFace);
+        }).catch(err => {
+          console.warn(`[mkmv-preload] Failed to load FontFace ${family}:`, err);
+        });
+      } catch (err) {}
+    });
+
+    console.log(`[mkmv-preload] Successfully registered fallback font (${path.basename(fontPath)}) as ${fontFamilies.join(', ')}`);
+  } catch (e) {
+    console.warn('[mkmv-preload] Error reading fallback font file:', e);
+  }
+
+  // RPG Maker MV 폰트 체인 패치 (누락된 한글 글리프 자동 폴백)
+  const fontChain = 'GameFont, "Noto Sans CJK KR", "NotoSansCJKkr", "Dotum", "AppleGothic", sans-serif';
+
+  const patchFontChain = () => {
+    if (window.Window_Base && window.Window_Base.prototype) {
+      window.Window_Base.prototype.standardFontFace = function() {
+        return fontChain;
+      };
+    }
+
+    if (window.Bitmap && window.Bitmap.prototype) {
+      const origMakeFontNameText = window.Bitmap.prototype._makeFontNameText;
+      window.Bitmap.prototype._makeFontNameText = function() {
+        const base = origMakeFontNameText ? origMakeFontNameText.apply(this, arguments) : '';
+        if (base && !base.includes('Noto Sans CJK KR')) {
+          return base + ', "Noto Sans CJK KR", "Dotum", "AppleGothic", sans-serif';
+        }
+        return base;
+      };
+    }
+  };
+
+  const fontTimer = setInterval(() => {
+    if (window.Window_Base || window.Bitmap) {
+      patchFontChain();
+      clearInterval(fontTimer);
+    }
+  }, 30);
+  setTimeout(() => clearInterval(fontTimer), 10000);
+}
+setupFallbackFont();

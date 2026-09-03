@@ -17,6 +17,7 @@ d:\workspace\mkxp-mv\
     ├── config.json                 # ⭐ 화면 해상도, 전체화면, 배율 설정
     ├── package.json                # 엔진 설정 매니페스트
     ├── keymap.gptk                 # 포트마스터 표준 키패드 매핑
+    ├── fonts/                      # ⭐ Noto Sans CJK KR 자동 폴백 폰트
     ├── port.json, fix_case.py...   # 포트마스터 메타데이터 및 유틸리티
     ├── locales/, resources/...     # 필수 런타임 에셋
     └── www/                        # ⭐ [게임 파일(www)을 넣는 곳]

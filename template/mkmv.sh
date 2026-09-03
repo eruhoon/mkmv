@@ -64,6 +64,7 @@ for d in "$XDG_RUNTIME_DIR" "/run/user/0" "/var/run/0-runtime-dir" "/run/user/10
 done
 
 # Exports
+export PORTMASTER_HOME="$controlfolder"
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 export TEXTINPUTINTERACTIVE="Y"
 export XDG_DATA_HOME="$CONF_DIR"
