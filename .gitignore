@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+*.zip
+
+# Cache directory (Electron runtime cache)
+.cache/
+
+# User isolated directory
+ignore/
+
+# Legacy monolithic runtime directory
+rpgmakermv/
+
+# System and logs
+*.log
+log.txt
+.DS_Store
+Thumbs.db

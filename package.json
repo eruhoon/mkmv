@@ -1,0 +1,24 @@
+{
+  "name": "mkmv",
+  "version": "0.0.1",
+  "description": "PortMaster Master Template and Runner for RPG Maker MV on Linux ARM64 / ROCKNIX",
+  "main": "template/main.js",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "clean": "node scripts/clean.mjs"
+  },
+  "keywords": [
+    "rpg-maker-mv",
+    "portmaster",
+    "rocknix",
+    "anbernic",
+    "arm64",
+    "electron"
+  ],
+  "author": "eruhoon",
+  "license": "MIT",
+  "devDependencies": {
+    "adm-zip": "^0.5.16"
+  }
+}

@@ -1,0 +1,51 @@
+# ==============================================================================
+# RPG Maker MV - PortMaster Gamepad Mapping (.gptk)
+# ==============================================================================
+
+[config]
+deadzone_mode = scaled_radial
+deadzone = 2000
+deadzone_scale = 8
+deadzone_delay = 16
+
+[controls]
+# System Keys
+back = esc
+select = esc
+start = enter
+
+# Action Buttons (RPG Maker MV Standard)
+# A (Confirm / Action) -> Z
+a = z
+# B (Cancel / Menu) -> X
+b = x
+# X (Dash / Fast Forward) -> Shift
+x = leftshift
+# Y (Sub Action) -> Space
+y = space
+
+# Shoulder Buttons
+l1 = pageup
+r1 = pagedown
+l2 = q
+r2 = w
+
+# D-Pad (Anbernic 기기 상/하 반전 보정 적용)
+up = up
+down = down
+left = left
+right = right
+
+# Left Analog Stick (Anbernic 기기 상/하 반전 보정 적용)
+left_analog_up = up
+left_analog_down = down
+left_analog_left = left
+left_analog_right = right
+
+# Right Analog Stick (Virtual Mouse)
+right_analog_up = mouse_movement_up
+right_analog_down = mouse_movement_down
+right_analog_left = mouse_movement_left
+right_analog_right = mouse_movement_right
+r3 = mouse_left
+l3 = mouse_right

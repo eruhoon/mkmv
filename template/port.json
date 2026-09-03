@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "name": "rpgmakermv.zip",
+  "items": [
+    "RPG Maker MV.sh",
+    "rpgmakermv"
+  ],
+  "items_opt": [],
+  "attr": {
+    "title": "RPG Maker MV Runner",
+    "desc": "PortMaster Runner for RPG Maker MV HTML5 games.",
+    "inst": "Copy your RPG Maker MV game files (www folder contents) into ports/rpgmakermv/www/",
+    "genres": [
+      "Role-playing (RPG)",
+      "Adventure"
+    ],
+    "portdesc": "RPG Maker MV engine runner powered by NW.js for ROCKNIX and Linux handhelds.",
+    "porter": [
+      "Custom"
+    ],
+    "image": {},
+    "rtr": false,
+    "exp": false,
+    "runtime": null,
+    "reqs": [],
+    "arch": [
+      "aarch64"
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "rpg-maker-mv-runner",
+  "version": "0.0.1",
+  "description": "PortMaster RPG Maker MV Runner for ROCKNIX / ARM64",
+  "main": "main.js"
+}
