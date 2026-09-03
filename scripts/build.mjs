@@ -8,12 +8,14 @@ const ELECTRON_VERSION = '22.3.27';
 const ELECTRON_URL = `https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/electron-v${ELECTRON_VERSION}-linux-arm64.zip`;
 
 const ROOT_DIR = process.cwd();
+const pkg = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf-8'));
 const CACHE_DIR = path.join(ROOT_DIR, '.cache');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 const TEMPLATE_DIR = path.join(ROOT_DIR, 'template');
 const ELECTRON_ZIP_PATH = path.join(CACHE_DIR, `electron-v${ELECTRON_VERSION}-linux-arm64.zip`);
 const DIST_APP_DIR = path.join(DIST_DIR, 'rpgmakermv');
-const DIST_ZIP_PATH = path.join(DIST_DIR, 'rpgmakermv.zip');
+const ZIP_NAME = `mkmv-v${pkg.version}.zip`;
+const DIST_ZIP_PATH = path.join(DIST_DIR, ZIP_NAME);
 
 async function downloadFile(url, destPath) {
   console.log(`[mkmv] Downloading runtime from: ${url}`);
@@ -131,7 +133,7 @@ async function build() {
   console.log('[mkmv] Template files copied successfully.');
 
   // 6. Create PortMaster distribution zip
-  console.log('[mkmv] Creating distribution zip: dist/rpgmakermv.zip...');
+  console.log(`[mkmv] Creating distribution zip: dist/${ZIP_NAME}...`);
   const distZip = new AdmZip();
   distZip.addLocalFile(launcherDest);
   distZip.addLocalFolder(DIST_APP_DIR, 'rpgmakermv');
