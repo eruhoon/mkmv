@@ -1,15 +1,15 @@
 {
   "version": 1,
-  "name": "rpgmakermv.zip",
+  "name": "mkmv.zip",
   "items": [
     "mkmv.sh",
-    "rpgmakermv"
+    "mkmv"
   ],
   "items_opt": [],
   "attr": {
     "title": "RPG Maker MV Runner",
     "desc": "PortMaster Runner for RPG Maker MV HTML5 games.",
-    "inst": "Copy your RPG Maker MV game files (www folder contents) into ports/rpgmakermv/www/",
+    "inst": "Copy your RPG Maker MV game files (www folder contents) into ports/mkmv/www/",
     "genres": [
       "Role-playing (RPG)",
       "Adventure"

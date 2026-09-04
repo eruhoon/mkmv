@@ -13,7 +13,7 @@ const CACHE_DIR = path.join(ROOT_DIR, '.cache');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 const TEMPLATE_DIR = path.join(ROOT_DIR, 'template');
 const ELECTRON_ZIP_PATH = path.join(CACHE_DIR, `electron-v${ELECTRON_VERSION}-linux-arm64.zip`);
-const DIST_APP_DIR = path.join(DIST_DIR, 'rpgmakermv');
+const DIST_APP_DIR = path.join(DIST_DIR, 'mkmv');
 const ZIP_NAME = `mkmv-v${pkg.version}.zip`;
 const DIST_ZIP_PATH = path.join(DIST_DIR, ZIP_NAME);
 
@@ -72,7 +72,7 @@ async function build() {
   }
 
   // 3. Extract Electron runtime
-  console.log('[mkmv] Extracting Electron runtime into dist/rpgmakermv...');
+  console.log('[mkmv] Extracting Electron runtime into dist/mkmv...');
   const zip = new AdmZip(ELECTRON_ZIP_PATH);
   zip.extractAllTo(DIST_APP_DIR, true);
 
@@ -117,7 +117,7 @@ async function build() {
   const distFontsDir = path.join(DIST_APP_DIR, 'fonts');
   if (fs.existsSync(templateFontsDir)) {
     fs.cpSync(templateFontsDir, distFontsDir, { recursive: true });
-    console.log('[mkmv] Copied template/fonts to dist/rpgmakermv/fonts.');
+    console.log('[mkmv] Copied template/fonts to dist/mkmv/fonts.');
   }
 
   // Copy launcher to dist root
@@ -136,7 +136,7 @@ async function build() {
   console.log(`[mkmv] Creating distribution zip: dist/${ZIP_NAME}...`);
   const distZip = new AdmZip();
   distZip.addLocalFile(launcherDest);
-  distZip.addLocalFolder(DIST_APP_DIR, 'rpgmakermv');
+  distZip.addLocalFolder(DIST_APP_DIR, 'mkmv');
   distZip.writeZip(DIST_ZIP_PATH);
 
   const stat = fs.statSync(DIST_ZIP_PATH);

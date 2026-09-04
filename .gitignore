@@ -13,6 +13,7 @@ ignore/
 
 # Legacy monolithic runtime directory
 rpgmakermv/
+mkmv/
 
 # System and logs
 *.log

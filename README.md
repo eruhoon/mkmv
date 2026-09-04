@@ -20,8 +20,8 @@ Anbernic(ROCKNIX / Linux ARM64) 기기의 **PortMaster** 환경에서 **RPG Make
 ## 🚀 빠른 시작 (일반 사용자)
 
 1. [Releases](https://github.com/eruhoon/mkmv/releases) 탭에서 최신 **`mkmv-v0.0.1.zip`** (또는 최신 버전 zip)을 다운로드합니다.
-2. 압축을 해제하면 나오는 `mkmv.sh` 파일과 `rpgmakermv` 폴더를 기기 SD카드의 `roms/ports/` 경로에 복사합니다.
-3. 플레이할 게임의 `www` 폴더 내용물을 `rpgmakermv/www/` 안에 넣고 기기에서 실행합니다.
+2. 압축을 해제하면 나오는 `mkmv.sh` 파일과 `mkmv` 폴더를 기기 SD카드의 `roms/ports/` 경로에 복사합니다.
+3. 플레이할 게임의 `www` 폴더 내용물을 `mkmv/www/` 안에 넣고 기기에서 실행합니다.
 
 > 📖 상세한 게임 복제 및 사용법은 **[HOW_TO_USE.md](HOW_TO_USE.md)**를 참고하세요.
 
@@ -43,7 +43,7 @@ pnpm run build
 
 * 빌드 스크립트가 공식 Electron aarch64 런타임을 자동으로 다운로드하고 캐싱합니다.
 * 불필요/충돌 드라이버 라이브러리를 정리하고 템플릿 소스를 병합합니다.
-* `dist/rpgmakermv/` 및 완성된 배포본 **`dist/rpgmakermv.zip`**이 생성됩니다.
+* `dist/mkmv/` 및 완성된 배포본 **`dist/mkmv-v*.zip`**이 생성됩니다.
 
 ### 3. 산출물 정리
 ```bash
