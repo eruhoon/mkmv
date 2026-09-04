@@ -36,6 +36,7 @@ GAME_ROOT=/$directory/ports/$GAME_CODE
 
 CONF_DIR="$GAME_ROOT/conf"
 mkdir -p "$CONF_DIR"
+mkdir -p "$GAME_ROOT/www/save"
 
 # Enable logging
 > "$GAME_ROOT/log.txt" && exec > >(tee "$GAME_ROOT/log.txt") 2>&1
@@ -81,7 +82,7 @@ chmod +x "$GAME_ROOT/electron" 2>/dev/null
 chmod +x "$GAME_ROOT/gptokeyb" 2>/dev/null
 
 # GPTK 실행 및 프로세스 바인딩 (SELECT + START 강제 종료 지원)
-$GPTOKEYB "electron" -c "./keymap.gptk" &
+$GPTOKEYB "electron" -c "./keymap.gptk" -k "electron" &
 pm_platform_helper "$GAME_ROOT/electron" >/dev/null
 
 FLAGS="--ozone-platform=wayland \

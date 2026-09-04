@@ -97,7 +97,6 @@ async function build() {
   const templateFiles = [
     'main.js',
     'preload.js',
-    'fix_case.py',
     'keymap.gptk',
     'port.json',
     'package.json',
@@ -125,10 +124,12 @@ async function build() {
   const launcherDest = path.join(DIST_DIR, 'mkmv.sh');
   fs.copyFileSync(launcherSrc, launcherDest);
 
-  // Ensure www directory with .gitkeep
+  // Ensure www and save directories with .gitkeep
   const wwwDir = path.join(DIST_APP_DIR, 'www');
-  fs.mkdirSync(wwwDir, { recursive: true });
+  const saveDir = path.join(wwwDir, 'save');
+  fs.mkdirSync(saveDir, { recursive: true });
   fs.writeFileSync(path.join(wwwDir, '.gitkeep'), '');
+  fs.writeFileSync(path.join(saveDir, '.gitkeep'), '');
 
   console.log('[mkmv] Template files copied successfully.');
 

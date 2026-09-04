@@ -10,7 +10,6 @@ Anbernic(ROCKNIX / Linux ARM64) 기기의 **PortMaster** 환경에서 **RPG Make
 ## ✨ 주요 기능
 
 * **1:1 실측 하드웨어 패드 매핑**: Anbernic 닌텐도 표준 배열 및 아날로그 스틱, NW.js 호환 Shim 내장 (`preload.js`).
-* **대소문자 자동 교정 (`fix_case.py`)**: Windows에서 제작된 게임의 대소문자 불일치로 인한 Linux 크래시 방지.
 * **Wayland & Ozone 하드웨어 가속**: ROCKNIX / aarch64 플랫폼 최적화 플래그 적용.
 * **스마트 자동 폴더 매칭**: `.sh` 파일명과 일치하는 폴더를 찾아 자동 구동.
 * **경량 소스 관리**: 대용량 바이너리는 소스 트리에 포함되지 않으며 `pnpm build` 또는 GitHub Releases를 통해 배포됩니다.
