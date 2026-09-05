@@ -182,7 +182,7 @@ fs.writeFileSync = function(p, data, options) {
 };
 
 // 사용자 정의 옵션 (config.json) 로드
-let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false, showFps: false, fastForward: true, fastForwardSpeed: 2 };
+let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false, showFps: false, fastForward: true, fastForwardSpeed: 2, lowMemoryMode: true, imageCacheLimit: 3 };
 try {
   const configPath = path.join(__dirname, 'config.json');
   if (origExistsSync.call(fs, configPath)) {
@@ -965,3 +965,87 @@ function setupAudioRecovery() {
 }
 
 setupAudioRecovery();
+
+// 10. 저사양 1GB 기기용 메모리 안정화 및 가비지 컬렉션(GC) 관리
+function setupLowMemoryManager() {
+  if (userOpt.lowMemoryMode === false) return;
+
+  // 1. 알만툴 Bitmap._onError 안전 가드 (removeEventListener null 에러 원천 차단)
+  const patchBitmapGuard = () => {
+    if (window.Bitmap && window.Bitmap.prototype) {
+      if (!window.Bitmap.prototype._origOnError) {
+        window.Bitmap.prototype._origOnError = window.Bitmap.prototype._onError;
+        window.Bitmap.prototype._onError = function() {
+          if (this._image) {
+            try {
+              this._image.removeEventListener('load', this._loadListener);
+              this._image.removeEventListener('error', this._errorListener);
+            } catch (e) {}
+          }
+          this._loadingState = 'error';
+        };
+      }
+      return true;
+    }
+    return false;
+  };
+
+  // 2. 씬 전환(메뉴 진입/퇴출 등) 시 가비지 컬렉션(GC) 안전 실행
+  const patchSceneCleanup = () => {
+    if (window.Scene_Base && window.Scene_Base.prototype) {
+      const origTerminate = window.Scene_Base.prototype.terminate;
+      window.Scene_Base.prototype.terminate = function() {
+        origTerminate.apply(this, arguments);
+        if (window.gc) {
+          try {
+            setTimeout(() => {
+              if (window.gc) window.gc();
+            }, 100);
+          } catch (e) {}
+        }
+      };
+      return true;
+    }
+    return false;
+  };
+
+  // 3. 맵 이동 및 로딩 완료 시 이전 맵 타일셋/스프라이트 메모리 즉시 수거 (연속 맵 이동 튕김 방지)
+  const patchMapCleanup = () => {
+    if (window.Scene_Map && window.Scene_Map.prototype) {
+      const origOnMapLoaded = window.Scene_Map.prototype.onMapLoaded;
+      window.Scene_Map.prototype.onMapLoaded = function() {
+        origOnMapLoaded.apply(this, arguments);
+        if (window.gc) {
+          setTimeout(() => {
+            if (window.gc) window.gc();
+          }, 150);
+        }
+      };
+      return true;
+    }
+    return false;
+  };
+
+  let bitmapHooked = false;
+  let sceneHooked = false;
+  let mapHooked = false;
+  const memTimer = setInterval(() => {
+    if (!bitmapHooked) bitmapHooked = patchBitmapGuard();
+    if (!sceneHooked) sceneHooked = patchSceneCleanup();
+    if (!mapHooked) mapHooked = patchMapCleanup();
+    if (bitmapHooked && sceneHooked && mapHooked) {
+      clearInterval(memTimer);
+      console.log('[mkmv-preload] Low memory safety guards, scene & map GC installed successfully');
+    }
+  }, 50);
+  setTimeout(() => clearInterval(memTimer), 20000);
+
+  // 4. 배속 플레이(Fast-Forward) 시 메모리 누적 방지: 30초마다 유휴 GC
+  setInterval(() => {
+    try {
+      if (window.gc) window.gc();
+    } catch (e) {}
+  }, 30000);
+}
+
+setupLowMemoryManager();

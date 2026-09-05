@@ -94,11 +94,19 @@ try {
   process.chdir(gameDir);
 } catch (e) {}
 
-// 저사양 1GB 기기용 메모리 제한 모드 (OOM 킬러 방지)
+// 저사양 1GB 기기용 메모리 최적화 및 V8 힙 제한 (OOM 킬러 원천 방지)
+const maxHeap = Number(opt.maxOldSpaceSize) || (opt.lowMemoryMode ? 256 : 512);
+console.log(`[mkmv] Memory configuration: maxOldSpaceSize=${maxHeap}MB, lowMemoryMode=${opt.lowMemoryMode !== false}`);
+app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${maxHeap} --expose-gc`);
+
 if (opt.lowMemoryMode) {
-  console.log('[mkmv] lowMemoryMode enabled: restricting V8 heap to 512MB');
-  app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
+  // 1GB RAM 기기(H700, RK3326, RK3566 등)를 위한 크로미움 프로세스 및 캐시 제약
+  app.commandLine.appendSwitch('renderer-process-limit', '1');
+  app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+  app.commandLine.appendSwitch('disk-cache-size', '1048576');
+  app.commandLine.appendSwitch('media-cache-size', '1048576');
 }
+
 
 // Wayland & Ozone platform settings
 app.commandLine.appendSwitch('ozone-platform', 'wayland');
