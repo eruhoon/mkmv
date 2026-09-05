@@ -77,7 +77,7 @@ fs.readFile = function(p, ...args) {
 };
 
 // 사용자 정의 옵션 (config.json) 로드
-let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false, showFps: false };
+let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false, showFps: false, fastForward: false, fastForwardSpeed: 2 };
 try {
   const configPath = path.join(__dirname, 'config.json');
   if (origExistsSync.call(fs, configPath)) {
@@ -594,3 +594,114 @@ function createFallbackFpsOverlay() {
 }
 
 setupFpsMeter();
+
+// 9. 고속 배속(Fast-Forward / 터보) 시스템 (R3 버튼 또는 R 키로 토글)
+function setupFastForward() {
+  if (!userOpt.fastForward) return;
+
+  const speedMultiplier = Math.max(1, Number(userOpt.fastForwardSpeed) || 2);
+  let isFastForward = false;
+  let indicator = null;
+
+  function createIndicator() {
+    if (document.getElementById('mkmv-fast-forward')) return;
+    indicator = document.createElement('div');
+    indicator.id = 'mkmv-fast-forward';
+    indicator.style.setProperty('display', 'none', 'important');
+    indicator.style.setProperty('position', 'fixed', 'important');
+    indicator.style.setProperty('top', '10px', 'important');
+    indicator.style.setProperty('right', '12px', 'important');
+    indicator.style.setProperty('z-index', '2147483647', 'important');
+    indicator.style.setProperty('background-color', 'rgba(0, 0, 0, 0.75)', 'important');
+    indicator.style.setProperty('color', '#00e5ff', 'important');
+    indicator.style.setProperty('font-family', 'monospace, sans-serif', 'important');
+    indicator.style.setProperty('font-size', '14px', 'important');
+    indicator.style.setProperty('font-weight', 'bold', 'important');
+    indicator.style.setProperty('padding', '3px 8px', 'important');
+    indicator.style.setProperty('border-radius', '4px', 'important');
+    indicator.style.setProperty('border', '1px solid rgba(0, 229, 255, 0.6)', 'important');
+    indicator.style.setProperty('box-shadow', '0 0 8px rgba(0, 229, 255, 0.4)', 'important');
+    indicator.style.setProperty('pointer-events', 'none', 'important');
+    indicator.style.setProperty('user-select', 'none', 'important');
+    indicator.textContent = `▶▶ ${speedMultiplier}x`;
+
+    const attach = () => {
+      if (document.body) {
+        document.body.appendChild(indicator);
+      } else {
+        document.documentElement.appendChild(indicator);
+      }
+    };
+    attach();
+  }
+  createIndicator();
+
+  function toggleFastForward() {
+    isFastForward = !isFastForward;
+    if (!indicator) indicator = document.getElementById('mkmv-fast-forward');
+    if (indicator) {
+      indicator.style.setProperty('display', isFastForward ? 'block' : 'none', 'important');
+      if (isFastForward) {
+        if (indicator.style.zIndex !== '2147483647') {
+          indicator.style.setProperty('z-index', '2147483647', 'important');
+        }
+        if (document.body && indicator.parentNode !== document.body) {
+          document.body.appendChild(indicator);
+        }
+      }
+    }
+    console.log(`[mkmv-preload] Fast forward: ${isFastForward ? `${speedMultiplier}x` : '1x'}`);
+  }
+
+  // R3 (키보드 R 또는 Tab) 키 토글 바인딩
+  window.addEventListener('keydown', (e) => {
+    const key = e.key ? e.key.toUpperCase() : '';
+    if ((key === 'R' || key === 'TAB') && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      toggleFastForward();
+    }
+  }, true);
+
+  // SceneManager.updateMain 훅 (로직 갱신 배속)
+  const hookTimer = setInterval(() => {
+    if (window.SceneManager && window.SceneManager.updateMain) {
+      const origUpdateMain = window.SceneManager.updateMain;
+      window.SceneManager.updateMain = function() {
+        if (!isFastForward) {
+          return origUpdateMain.apply(this, arguments);
+        }
+
+        // Fast-forward 가속 연산
+        if (typeof Utils !== 'undefined' && Utils.isMobileSafari && Utils.isMobileSafari()) {
+          for (let i = 0; i < speedMultiplier; i++) {
+            this.changeScene();
+            this.updateScene();
+          }
+        } else {
+          const newTime = this._getTimeInMsWithoutMobileSafari ? this._getTimeInMsWithoutMobileSafari() : performance.now();
+          let fTime = (newTime - this._currentTime) / 1000;
+          if (fTime > 0.25) fTime = 0.25;
+          this._currentTime = newTime;
+          this._accumulator += fTime * speedMultiplier;
+
+          let loops = 0;
+          const maxLoops = speedMultiplier * 4;
+          while (this._accumulator >= this._deltaTime && loops < maxLoops) {
+            this.updateInputData();
+            this.changeScene();
+            this.updateScene();
+            this._accumulator -= this._deltaTime;
+            loops++;
+          }
+        }
+        this.renderScene();
+        this.requestUpdate();
+      };
+      clearInterval(hookTimer);
+      console.log(`[mkmv-preload] Fast forward engine hook installed (${speedMultiplier}x available on R3)`);
+    }
+  }, 50);
+  setTimeout(() => clearInterval(hookTimer), 30000);
+}
+
+setupFastForward();

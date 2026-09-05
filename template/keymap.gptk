@@ -47,5 +47,6 @@ right_analog_up = mouse_movement_up
 right_analog_down = mouse_movement_down
 right_analog_left = mouse_movement_left
 right_analog_right = mouse_movement_right
-r3 = mouse_left
+# R3 Click -> Fast Forward Toggle (r)
+r3 = r
 l3 = mouse_right

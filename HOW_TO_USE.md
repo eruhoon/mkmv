@@ -77,6 +77,7 @@ SD카드:/roms/ports/
 | **Y 버튼 (좌측)** | **보조 액션 / 메뉴 (`Space`)** |
 | **START** | **시작 / 결정 (`Enter`)** |
 | **SELECT** | **메뉴 열기 / 닫기 (`Esc`)** |
+| **R3 (우측 스틱 클릭)** | **⏩ 고속 배속 토글 (1배속 ↔ 2배속 전환)** |
 | **SELECT + START (길게)** | **⭐ 게임 안전 강제 종료 (메뉴 복귀)** |
 
 ---
@@ -98,6 +99,8 @@ SD카드:/roms/ports/
       "hideCursor": false,
       "disableTouch": false,
       "showFps": false,
+      "fastForward": false,
+      "fastForwardSpeed": 2,
       "lowMemoryMode": false
     }
     ```
@@ -106,6 +109,8 @@ SD카드:/roms/ports/
     * `"hideCursor": true` : 화면에서 마우스 커서를 완전히 숨김
     * `"disableTouch": true` : 원치 않는 터치스크린 입력 간섭을 전면 차단
     * `"showFps": true` : 화면 좌상단에 실시간 FPS 및 성능 측정기 표시
+    * `"fastForward": true` : R3(우측 스틱 클릭)로 켜고 끌 수 있는 고속 배속 모드 활성화 (화면 우상단에 `▶▶ 2x` 인디케이터 표시)
+    * `"fastForwardSpeed": 2` : 배속 배율 (기본값 2배속, 3 설정 시 3배속)
     * `"lowMemoryMode": true` : RAM 1GB 기기(KNULLI 등)를 위한 V8 힙 512MB 제한 모드
 - **게임 백업**: `mkmv` 마스터 템플릿 폴더를 압축해서 보관해 두시면 언제든 새 게임을 무제한으로 찍어내실 수 있습니다.
 

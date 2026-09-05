@@ -55,6 +55,8 @@ let opt = {
   hideCursor: false,
   disableTouch: false,
   showFps: false,
+  fastForward: false,
+  fastForwardSpeed: 2,
   lowMemoryMode: false
 };
 
