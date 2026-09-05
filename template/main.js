@@ -11,7 +11,9 @@ let opt = {
   forceDeviceScaleFactor: 1.0,
   pixelated: true,
   scaling: 'fit',
-  disableGpu: true
+  disableGpu: true,
+  hideCursor: false,
+  disableTouch: false
 };
 
 try {
@@ -101,8 +103,17 @@ function createWindow() {
 
   if (opt.fullscreen !== false) {
     win.setFullScreen(true);
-    win.maximize();
   }
+
+  // 전체화면 토글(F4), 새로고침(F5, Ctrl+R) 등 임베디드 오작동 방지
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown') {
+      const key = input.key ? input.key.toUpperCase() : '';
+      if (key === 'F4' || key === 'F5' || (input.control && key === 'R')) {
+        event.preventDefault();
+      }
+    }
+  });
 
   const indexPath = path.join(wwwDir, 'index.html');
   win.loadFile(indexPath);

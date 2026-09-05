@@ -6,5 +6,7 @@
   "forceDeviceScaleFactor": 1.0,
   "scaling": "fit",
   "pixelated": true,
-  "disableGpu": true
+  "disableGpu": true,
+  "hideCursor": false,
+  "disableTouch": false
 }

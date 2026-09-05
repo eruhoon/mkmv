@@ -4,7 +4,7 @@ const fs = require('fs');
 const originalRequire = Module.prototype.require;
 
 // 사용자 정의 옵션 (config.json) 로드
-let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit' };
+let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false };
 try {
   const configPath = path.join(__dirname, 'config.json');
   if (fs.existsSync(configPath)) {
@@ -116,6 +116,17 @@ Module.prototype.require = function(id) {
 window.nw = nwShim;
 window.nwGui = nwShim;
 
+// NW.js 환경 식별 버전 주입 (Yanfly Core 등 플러그인의 데스크톱 분기 판별 지원)
+if (!process.versions['node-webkit']) {
+  process.versions['node-webkit'] = '0.13.0';
+}
+if (!process.versions['nw']) {
+  process.versions['nw'] = '0.13.0';
+}
+if (!process.versions['nw-flavor']) {
+  process.versions['nw-flavor'] = 'normal';
+}
+
 // 3. 알만툴 내장 게임패드 폴링 비활성화 (포트마스터 gptokeyb 단독 위임 및 키 충돌/이중 입력 방지)
 function disableInternalGamepad() {
   if (window.Input) {
@@ -132,7 +143,55 @@ const inputPollTimer = setInterval(() => {
 }, 30);
 setTimeout(() => clearInterval(inputPollTimer), 10000);
 
-// 5. 고해상도(1080p/720p) 스케일링 및 픽셀 선명도 보정 CSS 주입
+// 4. 알만툴 오디오 포커스 아웃 음소거 방지 (창 포커스 튐으로 인한 BGM 일시정지 방지)
+function patchAudioFocus() {
+  if (window.WebAudio) {
+    window.WebAudio._onVisibilityChange = function() {};
+  }
+  if (window.AudioManager) {
+    window.AudioManager._onVisibilityChange = function() {};
+  }
+}
+
+const audioPollTimer = setInterval(() => {
+  if (window.WebAudio || window.AudioManager) {
+    patchAudioFocus();
+    clearInterval(audioPollTimer);
+  }
+}, 30);
+setTimeout(() => clearInterval(audioPollTimer), 10000);
+
+// 5. 전체화면 토글(F4) 및 새로고침(F5, Ctrl+R) 단축키 가드
+window.addEventListener('keydown', (e) => {
+  const key = e.key ? e.key.toUpperCase() : '';
+  if (key === 'F4' || key === 'F5' || (e.ctrlKey && key === 'R')) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, true);
+
+// 6. 터치 동작 비활성화 옵션 (disableTouch: true 설정 시)
+if (userOpt.disableTouch) {
+  const cancelTouch = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  window.addEventListener('touchstart', cancelTouch, { capture: true, passive: false });
+  window.addEventListener('touchmove', cancelTouch, { capture: true, passive: false });
+  window.addEventListener('touchend', cancelTouch, { capture: true, passive: false });
+  window.addEventListener('touchcancel', cancelTouch, { capture: true, passive: false });
+
+  const touchTimer = setInterval(() => {
+    if (window.TouchInput) {
+      window.TouchInput._setupEventHandlers = function() {};
+      clearInterval(touchTimer);
+    }
+  }, 30);
+  setTimeout(() => clearInterval(touchTimer), 10000);
+  console.log('[mkmv-preload] Touch input disabled via config.json');
+}
+
+// 7. 고해상도(1080p/720p) 스케일링 및 픽셀 선명도 보정 CSS 주입
 function injectResolutionStyles() {
   const style = document.createElement('style');
   style.id = 'mkmv-resolution-fix';
@@ -152,6 +211,13 @@ function injectResolutionStyles() {
       image-rendering: -webkit-optimize-contrast !important;
       image-rendering: crisp-edges !important;
       image-rendering: pixelated !important;
+    }
+    `;
+  }
+  if (userOpt.hideCursor) {
+    cssText += `
+    html, body, canvas, * {
+      cursor: none !important;
     }
     `;
   }
