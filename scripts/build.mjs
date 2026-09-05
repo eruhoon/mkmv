@@ -111,12 +111,15 @@ async function build() {
     }
   }
 
-  // Copy template fonts directory if exists
-  const templateFontsDir = path.join(TEMPLATE_DIR, 'fonts');
-  const distFontsDir = path.join(DIST_APP_DIR, 'fonts');
-  if (fs.existsSync(templateFontsDir)) {
-    fs.cpSync(templateFontsDir, distFontsDir, { recursive: true });
-    console.log('[mkmv] Copied template/fonts to dist/mkmv/fonts.');
+  // Copy template directories if exist (fonts, conf, share, lib)
+  const templateDirs = ['fonts', 'conf', 'share', 'lib'];
+  for (const dirName of templateDirs) {
+    const srcDir = path.join(TEMPLATE_DIR, dirName);
+    const destDir = path.join(DIST_APP_DIR, dirName);
+    if (fs.existsSync(srcDir)) {
+      fs.cpSync(srcDir, destDir, { recursive: true });
+      console.log(`[mkmv] Copied template/${dirName} to dist/mkmv/${dirName}.`);
+    }
   }
 
   // Copy launcher to dist root
