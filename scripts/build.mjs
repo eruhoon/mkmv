@@ -76,21 +76,8 @@ async function build() {
   const zip = new AdmZip(ELECTRON_ZIP_PATH);
   zip.extractAllTo(DIST_APP_DIR, true);
 
-  // 4. Remove conflicting libraries (PortMaster standard optimization)
-  const conflictLibs = [
-    'libEGL.so',
-    'libGLESv2.so',
-    'libvk_swiftshader.so',
-    'libvulkan.so.1',
-    'vk_swiftshader_icd.json'
-  ];
-  for (const lib of conflictLibs) {
-    const target = path.join(DIST_APP_DIR, lib);
-    if (fs.existsSync(target)) {
-      fs.rmSync(target, { force: true });
-      console.log(`[mkmv] Cleaned conflicting driver library: ${lib}`);
-    }
-  }
+  // 4. WebGL 및 SwiftShader 가속 라이브러리는 RPG Maker MZ 구동을 위해 보존
+  console.log('[mkmv] Preserved WebGL/SwiftShader driver libraries for MZ compatibility.');
 
   // 5. Copy template files
   console.log('[mkmv] Copying template source files...');

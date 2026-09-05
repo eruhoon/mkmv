@@ -54,6 +54,8 @@ RUNNER="/tmp/mkmv_runner.sh"
 
 cleanup() {
   echo "Cleaning up runtime environment..."
+  echo "=== KERNEL DMESG (OOM / CRASH CHECK) ==="
+  dmesg | tail -n 50 2>/dev/null
   rm -f "$RUNNER" 2>/dev/null
   if [ -d "/tmp/weston" ]; then
     /tmp/weston/westonwrap.sh cleanup 2>/dev/null
@@ -65,7 +67,7 @@ trap cleanup EXIT INT TERM
 
 CONF_DIR="$GAME_ROOT/conf"
 mkdir -p "$CONF_DIR"
-mkdir -p "$GAME_ROOT/www/save"
+mkdir -p "$GAME_ROOT/www/save" "$GAME_ROOT/game/save"
 
 # Enable logging
 > "$GAME_ROOT/log.txt" && exec > >(tee "$GAME_ROOT/log.txt") 2>&1
@@ -76,8 +78,8 @@ echo "Directory: $GAME_ROOT"
 echo "Date: $(date)"
 echo "================================================="
 
-# 충돌 번들 라이브러리 정리
-rm -f "$GAME_ROOT/libEGL.so" "$GAME_ROOT/libGLESv2.so" "$GAME_ROOT/libvk_swiftshader.so" "$GAME_ROOT/libvulkan.so.1" 2>/dev/null
+# WebGL / SwiftShader 호환 라이브러리 보존
+chmod +x "$GAME_ROOT"/*.so 2>/dev/null
 
 # Wayland 소켓 파일 동적 탐색 (ROCKNIX 등 이미 켜진 Wayland 감지)
 for d in "$XDG_RUNTIME_DIR" "/run/user/0" "/var/run/0-runtime-dir" "/run/user/1000" "/var/run" "/tmp" "/run"; do
@@ -119,7 +121,7 @@ cd "$GAME_ROOT"
 
 chmod +x "$GAME_ROOT/electron" 2>/dev/null
 chmod +x "$GAME_ROOT/gptokeyb" 2>/dev/null
-chmod -R +r "$GAME_ROOT/lib" "$GAME_ROOT/conf" "$GAME_ROOT/share" 2>/dev/null
+chmod -R +r "$GAME_ROOT/lib" "$GAME_ROOT/conf" "$GAME_ROOT/share" "$GAME_ROOT/www" "$GAME_ROOT/game" 2>/dev/null
 
 # GPTK 실행 및 프로세스 바인딩 (SELECT + START 강제 종료 지원)
 $GPTOKEYB "electron" -c "./keymap.gptk" -k "electron" &
@@ -156,9 +158,10 @@ export XDG_DATA_DIRS="$GAME_ROOT/share:/usr/share:$XDG_DATA_DIRS"
 
 FLAGS="--ozone-platform=wayland \
        --enable-features=UseOzonePlatform \
-       --disable-gpu \
-       --disable-gpu-compositing \
-       --disable-gpu-watchdog \
+       --disable-gpu-sandbox \
+       --ignore-gpu-blocklist \
+       --enable-gpu-rasterization \
+       --use-gl=egl \
        --disable-dev-shm-usage \
        --no-sandbox \
        --high-dpi-support=1 \
