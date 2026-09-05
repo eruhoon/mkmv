@@ -145,7 +145,9 @@ function createWindow() {
     }
   });
 
-  // 플러그인(Community_Basic 등)에서 창 크기 조정을 시도할 때 강제 차단
+  // 플러그인(Community_Basic 등)에서 창 크기/위치 조정을 시도할 때 강제 차단
+  win.setResizable(false);
+  try { win.setMovable(false); } catch (e) {}
   win.on('will-resize', (e) => {
     console.log('[mkmv] Blocked renderer will-resize event');
     e.preventDefault();

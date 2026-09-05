@@ -229,6 +229,37 @@ Module.prototype.require = function(id) {
 window.nw = nwShim;
 window.nwGui = nwShim;
 
+// 브라우저 창 크기 및 위치 강제 변경 방지 (Yanfly CoreEngine, 인게임 스크립트의 화면 축소 및 쏠림 원천 차단)
+const blockWindowResize = () => {
+  const noop = function() {};
+  try {
+    Object.defineProperty(window, 'resizeTo', { value: noop, writable: false, configurable: true });
+    Object.defineProperty(window, 'resizeBy', { value: noop, writable: false, configurable: true });
+    Object.defineProperty(window, 'moveTo', { value: noop, writable: false, configurable: true });
+    Object.defineProperty(window, 'moveBy', { value: noop, writable: false, configurable: true });
+  } catch (e) {
+    window.resizeTo = noop;
+    window.resizeBy = noop;
+    window.moveTo = noop;
+    window.moveBy = noop;
+  }
+};
+blockWindowResize();
+
+// 플러그인 해상도 강제 재설정 방지 (Yanfly CoreEngine updateResolution 등 무력화)
+window.Imported = window.Imported || {};
+window.Imported.ScreenResolution = true;
+
+const yanflyGuardTimer = setInterval(() => {
+  if (window.Yanfly && window.Yanfly.updateResolution) {
+    window.Yanfly.updateResolution = function() {
+      console.log('[mkmv-preload] Blocked Yanfly.updateResolution()');
+    };
+    clearInterval(yanflyGuardTimer);
+  }
+}, 30);
+setTimeout(() => clearInterval(yanflyGuardTimer), 15000);
+
 // NW.js 환경 식별 버전 주입 (Yanfly Core 등 플러그인의 데스크톱 분기 판별 지원)
 if (!process.versions['node-webkit']) {
   process.versions['node-webkit'] = '0.13.0';
@@ -360,8 +391,8 @@ function patchGraphics() {
     if (isFillOrStretch) {
       this._realScale = 1;
     } else {
-      const h = window.innerWidth / this._width;
-      const v = window.innerHeight / this._height;
+      const h = window.innerWidth / (this._width || 1);
+      const v = window.innerHeight / (this._height || 1);
       this._realScale = Math.min(h, v);
     }
   };
@@ -380,8 +411,10 @@ function patchGraphics() {
       element.style.width = window.innerWidth + 'px';
       element.style.height = window.innerHeight + 'px';
     } else {
-      const width = Math.round(element.width * this._realScale);
-      const height = Math.round(element.height * this._realScale);
+      const baseW = (element.width !== undefined && element.width > 0) ? element.width : (window.Graphics._width || 1920);
+      const baseH = (element.height !== undefined && element.height > 0) ? element.height : (window.Graphics._height || 1080);
+      const width = Math.round(baseW * this._realScale);
+      const height = Math.round(baseH * this._realScale);
       element.style.width = width + 'px';
       element.style.height = height + 'px';
     }
@@ -415,6 +448,24 @@ const gTimer = setInterval(() => {
   }
 }, 30);
 setTimeout(() => clearInterval(gTimer), 10000);
+
+// SceneManager 시작 시점 및 씬 전환 시 해상도/스케일 강제 유지
+const smTimer = setInterval(() => {
+  if (window.SceneManager && window.SceneManager.run) {
+    const origRun = window.SceneManager.run;
+    window.SceneManager.run = function(sceneClass) {
+      patchGraphics();
+      const res = origRun.apply(this, arguments);
+      patchGraphics();
+      if (window.Graphics && typeof window.Graphics._updateAllElements === 'function') {
+        window.Graphics._updateAllElements();
+      }
+      return res;
+    };
+    clearInterval(smTimer);
+  }
+}, 30);
+setTimeout(() => clearInterval(smTimer), 15000);
 
 window.addEventListener('load', () => {
   setTimeout(() => {
