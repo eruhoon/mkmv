@@ -23,7 +23,7 @@ Anbernic 등 Linux ARM64 핸드헬드 기기(**ROCKNIX**, **KNULLI**, Batocera �
 
 ## 🚀 빠른 시작 (일반 사용자)
 
-1. [Releases](https://github.com/eruhoon/mkmv/releases) 탭에서 최신 **`mkmv-v0.1.0.zip`** (또는 최신 버전 zip)을 다운로드합니다.
+1. [Releases](https://github.com/eruhoon/mkmv/releases) 탭에서 최신 **`mkmv-v0.2.0.zip`** (또는 최신 버전 zip)을 다운로드합니다.
 2. 압축을 해제하면 나오는 `mkmv.sh` 파일과 `mkmv` 폴더를 기기 SD카드의 `roms/ports/` 경로에 복사합니다.
 3. 플레이할 게임의 `www` 폴더 내용물을 `mkmv/www/` 안에 넣고 기기에서 실행합니다.
 

@@ -1,7 +1,7 @@
 {
   "name": "mkmv",
-  "version": "0.1.0",
-  "description": "PortMaster Master Template and Runner for RPG Maker MV on Linux ARM64 / ROCKNIX",
+  "version": "0.2.0",
+  "description": "PortMaster Runner for RPG Maker MV HTML5 games",
   "main": "template/main.js",
   "type": "module",
   "scripts": {
