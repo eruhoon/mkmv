@@ -54,6 +54,7 @@ let opt = {
   disableGpu: true,
   hideCursor: false,
   disableTouch: false,
+  showFps: false,
   lowMemoryMode: false
 };
 

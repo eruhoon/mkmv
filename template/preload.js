@@ -77,7 +77,7 @@ fs.readFile = function(p, ...args) {
 };
 
 // 사용자 정의 옵션 (config.json) 로드
-let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false };
+let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false, showFps: false };
 try {
   const configPath = path.join(__dirname, 'config.json');
   if (origExistsSync.call(fs, configPath)) {
@@ -487,3 +487,96 @@ const fontReadyTimer = setInterval(() => {
   }
 }, 20);
 setTimeout(() => clearInterval(fontReadyTimer), 15000);
+
+// 8. FPS 및 실시간 성능 오버레이 (config.json의 showFps: true 설정 시)
+function setupFpsMeter() {
+  if (!userOpt.showFps) return;
+
+  let activated = false;
+
+  const tryEnableMvMeter = () => {
+    if (window.Graphics && window.Graphics._fpsMeter) {
+      try {
+        window.Graphics.showFps();
+        if (typeof window.Graphics._fpsMeter.showFps === 'function') {
+          window.Graphics._fpsMeter.showFps();
+        }
+        if (window.Graphics._fpsMeter.container) {
+          window.Graphics._fpsMeter.container.style.zIndex = '100000';
+          window.Graphics._fpsMeter.container.style.display = 'block';
+        }
+        if (window.Graphics._modeBox) {
+          window.Graphics._modeBox.style.opacity = '1';
+          window.Graphics._modeBox.style.zIndex = '99999';
+        }
+        activated = true;
+        console.log('[mkmv-preload] RPG Maker MV built-in FPSMeter activated');
+        return true;
+      } catch (e) {}
+    }
+    return false;
+  };
+
+  const timer = setInterval(() => {
+    if (tryEnableMvMeter()) {
+      clearInterval(timer);
+    }
+  }, 50);
+
+  // 알만툴 내장 FPSMeter가 비활성화되었거나 누락된 경우 자체 고성능 오버레이 생성
+  setTimeout(() => {
+    clearInterval(timer);
+    if (!activated) {
+      createFallbackFpsOverlay();
+    }
+  }, 4000);
+}
+
+function createFallbackFpsOverlay() {
+  if (document.getElementById('mkmv-fps-counter')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'mkmv-fps-counter';
+  overlay.style.position = 'fixed';
+  overlay.style.top = '8px';
+  overlay.style.left = '8px';
+  overlay.style.zIndex = '100000';
+  overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+  overlay.style.color = '#00ff66';
+  overlay.style.fontFamily = 'monospace';
+  overlay.style.fontSize = '13px';
+  overlay.style.fontWeight = 'bold';
+  overlay.style.padding = '3px 7px';
+  overlay.style.borderRadius = '4px';
+  overlay.style.pointerEvents = 'none';
+  overlay.style.border = '1px solid rgba(0, 255, 102, 0.3)';
+  overlay.textContent = 'FPS: --';
+
+  const appendOverlay = () => {
+    if (document.body) {
+      document.body.appendChild(overlay);
+    } else {
+      document.addEventListener('DOMContentLoaded', () => document.body && document.body.appendChild(overlay));
+    }
+  };
+  appendOverlay();
+
+  let frameCount = 0;
+  let lastTime = performance.now();
+
+  function updateFpsLoop(now) {
+    frameCount++;
+    const elapsed = now - lastTime;
+    if (elapsed >= 500) {
+      const currentFps = Math.round((frameCount * 1000) / elapsed);
+      overlay.textContent = `FPS: ${currentFps}`;
+      frameCount = 0;
+      lastTime = now;
+    }
+    requestAnimationFrame(updateFpsLoop);
+  }
+  requestAnimationFrame(updateFpsLoop);
+  console.log('[mkmv-preload] Standalone FPS counter overlay activated');
+}
+
+setupFpsMeter();

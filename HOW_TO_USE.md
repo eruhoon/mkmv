@@ -94,10 +94,18 @@ SD카드:/roms/ports/
       "forceDeviceScaleFactor": 1.0,
       "scaling": "fit",
       "pixelated": true,
-      "disableGpu": true
+      "disableGpu": true,
+      "hideCursor": false,
+      "disableTouch": false,
+      "showFps": false,
+      "lowMemoryMode": false
     }
     ```
-    * `"scaling": "fit"` : 원래 게임 비율(도트 비율)을 유지하며 화면 상하(1080p)를 꽉 채우고 화면 정중앙에 배치 (추천)
-    * `"scaling": "fill"` : 좌우 블랙바 없이 16:9 화면 전체에 완전히 가득 채움 (풀 스트레칭)
+    * `"scaling": "fit"` : 원래 게임 비율(도트 비율)을 유지하며 화면 상하를 꽉 채우고 화면 정중앙에 배치 (기본값)
+    * `"scaling": "fill"` : 잘림 없이 화면 전체에 가로/세로를 가득 채움 (풀 스트레칭)
+    * `"hideCursor": true` : 화면에서 마우스 커서를 완전히 숨김
+    * `"disableTouch": true` : 원치 않는 터치스크린 입력 간섭을 전면 차단
+    * `"showFps": true` : 화면 좌상단에 실시간 FPS 및 성능 측정기 표시
+    * `"lowMemoryMode": true` : RAM 1GB 기기(KNULLI 등)를 위한 V8 힙 512MB 제한 모드
 - **게임 백업**: `mkmv` 마스터 템플릿 폴더를 압축해서 보관해 두시면 언제든 새 게임을 무제한으로 찍어내실 수 있습니다.
 
