@@ -492,20 +492,20 @@ setTimeout(() => clearInterval(fontReadyTimer), 15000);
 function setupFpsMeter() {
   if (!userOpt.showFps) return;
 
-  // 1) 전용 초경량 고시인성 FPS 오버레이 (화면 우상단 항상 최상위 노출)
-  createDedicatedFpsOverlay();
+  let activated = false;
 
-  // 2) 알만툴 MV 엔진 내장 FPSMeter 및 ModeBox(Canvas/WebGL) 동시 활성화
+  // 알만툴 MV 엔진 내장 FPSMeter 및 ModeBox(Canvas/WebGL) 좌상단 활성화
   const hookMvMeter = () => {
     if (window.Graphics) {
       if (window.Graphics._modifyExistingElements) {
         const origModify = window.Graphics._modifyExistingElements;
         window.Graphics._modifyExistingElements = function() {
           if (origModify) origModify.apply(this, arguments);
-          const el = document.getElementById('mkmv-fps-counter');
-          if (el) el.style.setProperty('z-index', '2147483647', 'important');
           if (window.Graphics._fpsMeter && window.Graphics._fpsMeter.container) {
             window.Graphics._fpsMeter.container.style.setProperty('z-index', '2147483640', 'important');
+          }
+          if (window.Graphics._modeBox) {
+            window.Graphics._modeBox.style.setProperty('z-index', '2147483639', 'important');
           }
         };
       }
@@ -524,6 +524,7 @@ function setupFpsMeter() {
             window.Graphics._modeBox.style.setProperty('z-index', '2147483639', 'important');
             window.Graphics._modeBox.style.opacity = '1';
           }
+          activated = true;
         } catch (e) {}
       }
     }
@@ -531,68 +532,65 @@ function setupFpsMeter() {
 
   const mvTimer = setInterval(hookMvMeter, 100);
   setTimeout(() => clearInterval(mvTimer), 25000);
+
+  // 알만툴 내장 FPSMeter가 없는 비표준 게임의 경우에만 좌상단 폴백 오버레이 생성
+  setTimeout(() => {
+    if (!activated && (!window.Graphics || !window.Graphics._fpsMeter)) {
+      createFallbackFpsOverlay();
+    }
+  }, 6000);
 }
 
-function createDedicatedFpsOverlay() {
-  const init = () => {
-    if (document.getElementById('mkmv-fps-counter')) return;
+function createFallbackFpsOverlay() {
+  if (document.getElementById('mkmv-fps-counter')) return;
 
-    const overlay = document.createElement('div');
-    overlay.id = 'mkmv-fps-counter';
-    overlay.style.setProperty('position', 'fixed', 'important');
-    overlay.style.setProperty('top', '10px', 'important');
-    overlay.style.setProperty('right', '12px', 'important');
-    overlay.style.setProperty('z-index', '2147483647', 'important');
-    overlay.style.setProperty('background-color', 'rgba(0, 0, 0, 0.75)', 'important');
-    overlay.style.setProperty('color', '#00ff66', 'important');
-    overlay.style.setProperty('font-family', 'monospace, sans-serif', 'important');
-    overlay.style.setProperty('font-size', '15px', 'important');
-    overlay.style.setProperty('font-weight', 'bold', 'important');
-    overlay.style.setProperty('padding', '4px 10px', 'important');
-    overlay.style.setProperty('border-radius', '6px', 'important');
-    overlay.style.setProperty('border', '1px solid rgba(0, 255, 102, 0.6)', 'important');
-    overlay.style.setProperty('pointer-events', 'none', 'important');
-    overlay.style.setProperty('user-select', 'none', 'important');
-    overlay.style.setProperty('display', 'block', 'important');
-    overlay.textContent = 'FPS: --';
+  const overlay = document.createElement('div');
+  overlay.id = 'mkmv-fps-counter';
+  overlay.style.setProperty('position', 'fixed', 'important');
+  overlay.style.setProperty('top', '10px', 'important');
+  overlay.style.setProperty('left', '12px', 'important');
+  overlay.style.setProperty('z-index', '2147483647', 'important');
+  overlay.style.setProperty('background-color', 'rgba(0, 0, 0, 0.75)', 'important');
+  overlay.style.setProperty('color', '#00ff66', 'important');
+  overlay.style.setProperty('font-family', 'monospace, sans-serif', 'important');
+  overlay.style.setProperty('font-size', '14px', 'important');
+  overlay.style.setProperty('font-weight', 'bold', 'important');
+  overlay.style.setProperty('padding', '3px 8px', 'important');
+  overlay.style.setProperty('border-radius', '4px', 'important');
+  overlay.style.setProperty('border', '1px solid rgba(0, 255, 102, 0.5)', 'important');
+  overlay.style.setProperty('pointer-events', 'none', 'important');
+  overlay.style.setProperty('user-select', 'none', 'important');
+  overlay.style.setProperty('display', 'block', 'important');
+  overlay.textContent = 'FPS: --';
 
-    if (document.body) {
-      document.body.appendChild(overlay);
-    } else {
-      document.documentElement.appendChild(overlay);
-    }
+  if (document.body) {
+    document.body.appendChild(overlay);
+  } else {
+    document.documentElement.appendChild(overlay);
+  }
 
-    let frameCount = 0;
-    let lastTime = performance.now();
+  let frameCount = 0;
+  let lastTime = performance.now();
 
-    function updateFpsLoop(now) {
-      frameCount++;
-      const elapsed = now - lastTime;
-      if (elapsed >= 500) {
-        const currentFps = Math.round((frameCount * 1000) / elapsed);
-        overlay.textContent = `FPS: ${currentFps}`;
-        frameCount = 0;
-        lastTime = now;
+  function updateFpsLoop(now) {
+    frameCount++;
+    const elapsed = now - lastTime;
+    if (elapsed >= 500) {
+      const currentFps = Math.round((frameCount * 1000) / elapsed);
+      overlay.textContent = `FPS: ${currentFps}`;
+      frameCount = 0;
+      lastTime = now;
 
-        // 알만툴 씬 전환 등으로 z-index나 부모가 변경되었을 때 최상위 복구
-        if (overlay.style.zIndex !== '2147483647') {
-          overlay.style.setProperty('z-index', '2147483647', 'important');
-        }
-        if (document.body && overlay.parentNode !== document.body) {
-          document.body.appendChild(overlay);
-        }
+      if (overlay.style.zIndex !== '2147483647') {
+        overlay.style.setProperty('z-index', '2147483647', 'important');
       }
-      requestAnimationFrame(updateFpsLoop);
+      if (document.body && overlay.parentNode !== document.body) {
+        document.body.appendChild(overlay);
+      }
     }
     requestAnimationFrame(updateFpsLoop);
-    console.log('[mkmv-preload] Dedicated top-right FPS overlay activated');
-  };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
   }
+  requestAnimationFrame(updateFpsLoop);
 }
 
 setupFpsMeter();
