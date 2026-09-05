@@ -239,13 +239,18 @@ function patchGraphics() {
   window.Graphics._defaultStretchMode = function() { return true; };
   window.Graphics._stretchEnabled = true;
 
-  const isFill = (userOpt.scaling === 'fill');
+  // 'fill' 또는 'stretch'는 잘림 없이 화면 가로/세로 전체를 꽉 채우는 스트레치 모드로 동작
+  const isFillOrStretch = (userOpt.scaling === 'fill' || userOpt.scaling === 'stretch');
 
   window.Graphics._updateRealScale = function() {
     this._stretchEnabled = true;
-    const h = window.innerWidth / this._width;
-    const v = window.innerHeight / this._height;
-    this._realScale = isFill ? Math.max(h, v) : Math.min(h, v);
+    if (isFillOrStretch) {
+      this._realScale = 1;
+    } else {
+      const h = window.innerWidth / this._width;
+      const v = window.innerHeight / this._height;
+      this._realScale = Math.min(h, v);
+    }
   };
 
   window.Graphics._centerElement = function(element) {
@@ -257,7 +262,8 @@ function patchGraphics() {
     element.style.right = '0px';
     element.style.bottom = '0px';
 
-    if (isFill) {
+    if (isFillOrStretch) {
+      // 화면 잘림(Crop) 없이 가로/세로를 디스플레이 전체로 꽉 채움
       element.style.width = window.innerWidth + 'px';
       element.style.height = window.innerHeight + 'px';
     } else {
@@ -268,16 +274,16 @@ function patchGraphics() {
     }
   };
 
-  if (isFill) {
+  if (isFillOrStretch) {
     window.Graphics.pageToCanvasX = function(x) {
       if (this._canvas) {
-        return Math.round(x / (window.innerWidth / this._width));
+        return Math.round(x * (this._width / window.innerWidth));
       }
       return 0;
     };
     window.Graphics.pageToCanvasY = function(y) {
       if (this._canvas) {
-        return Math.round(y / (window.innerHeight / this._height));
+        return Math.round(y * (this._height / window.innerHeight));
       }
       return 0;
     };
@@ -353,7 +359,16 @@ function setupFallbackFont() {
       'Dotum',
       'AppleGothic',
       'SimHei',
-      'Heiti TC'
+      'Heiti TC',
+      // 일본어 알만툴 MV 게임 표준 폰트 호환성 추가
+      'Meiryo',
+      'MS Gothic',
+      'MS PGothic',
+      'Yu Gothic',
+      'YuGothic',
+      'Hiragino Kaku Gothic ProN',
+      'IPAGothic',
+      'IPAMincho'
     ];
 
     fontFamilies.forEach(family => {
@@ -372,8 +387,8 @@ function setupFallbackFont() {
     console.warn('[mkmv-preload] Error reading fallback font file:', e);
   }
 
-  // RPG Maker MV 폰트 체인 패치 (누락된 한글 글리프 자동 폴백)
-  const fontChain = 'GameFont, "Noto Sans CJK KR", "NotoSansCJKkr", "Dotum", "AppleGothic", sans-serif';
+  // RPG Maker MV 폰트 체인 패치 (누락된 한글/일본어/한자 글리프 자동 폴백)
+  const fontChain = 'GameFont, "Noto Sans CJK KR", "NotoSansCJKkr", "Meiryo", "MS Gothic", "Yu Gothic", "Dotum", "AppleGothic", "SimHei", sans-serif';
 
   const patchFontChain = () => {
     if (window.Window_Base && window.Window_Base.prototype) {

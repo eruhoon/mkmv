@@ -122,10 +122,15 @@ async function build() {
     }
   }
 
-  // Copy launcher to dist root
+  // Copy launcher to dist root with strict Unix LF line endings and no BOM
   const launcherSrc = path.join(TEMPLATE_DIR, 'mkmv.sh');
   const launcherDest = path.join(DIST_DIR, 'mkmv.sh');
-  fs.copyFileSync(launcherSrc, launcherDest);
+  let launcherContent = fs.readFileSync(launcherSrc, 'utf8');
+  if (launcherContent.charCodeAt(0) === 0xFEFF) {
+    launcherContent = launcherContent.slice(1);
+  }
+  launcherContent = launcherContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  fs.writeFileSync(launcherDest, launcherContent, { encoding: 'utf8', flag: 'w' });
 
   // Ensure www and save directories with .gitkeep
   const wwwDir = path.join(DIST_APP_DIR, 'www');
@@ -141,6 +146,7 @@ async function build() {
   const distZip = new AdmZip();
   distZip.addLocalFile(launcherDest);
   distZip.addLocalFolder(DIST_APP_DIR, 'mkmv');
+
   distZip.writeZip(DIST_ZIP_PATH);
 
   const stat = fs.statSync(DIST_ZIP_PATH);
