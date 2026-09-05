@@ -50,6 +50,18 @@ else
   GAME_ROOT="$(pwd)"
 fi
 export GAME_ROOT
+RUNNER="/tmp/mkmv_runner.sh"
+
+cleanup() {
+  echo "Cleaning up runtime environment..."
+  rm -f "$RUNNER" 2>/dev/null
+  if [ -d "/tmp/weston" ]; then
+    /tmp/weston/westonwrap.sh cleanup 2>/dev/null
+    $ESUDO umount /tmp/weston 2>/dev/null
+  fi
+  pm_finish
+}
+trap cleanup EXIT INT TERM
 
 CONF_DIR="$GAME_ROOT/conf"
 mkdir -p "$CONF_DIR"
@@ -190,6 +202,5 @@ else
   fi
 fi
 
-# Cleanup
-rm -f "$RUNNER" 2>/dev/null
-pm_finish
+# 정상 종료 시 trap cleanup EXIT가 자동 호출됩니다.
+exit 0

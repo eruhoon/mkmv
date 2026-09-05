@@ -8,5 +8,6 @@
   "pixelated": true,
   "disableGpu": true,
   "hideCursor": false,
-  "disableTouch": false
+  "disableTouch": false,
+  "lowMemoryMode": false
 }

@@ -53,7 +53,8 @@ let opt = {
   scaling: 'fit',
   disableGpu: true,
   hideCursor: false,
-  disableTouch: false
+  disableTouch: false,
+  lowMemoryMode: false
 };
 
 try {
@@ -71,6 +72,13 @@ const wwwDir = path.join(__dirname, 'www');
 try {
   process.chdir(wwwDir);
 } catch (e) {}
+
+// 저사양 1GB 기기용 메모리 제한 모드 (OOM 킬러 방지)
+if (opt.lowMemoryMode) {
+  console.log('[mkmv] lowMemoryMode enabled: restricting V8 heap to 512MB');
+  app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
+  app.commandLine.appendSwitch('renderer-process-limit', '1');
+}
 
 // Wayland & Ozone platform settings
 app.commandLine.appendSwitch('ozone-platform', 'wayland');
