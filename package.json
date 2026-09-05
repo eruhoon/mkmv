@@ -1,6 +1,6 @@
 {
   "name": "mkmv",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "PortMaster Master Template and Runner for RPG Maker MV on Linux ARM64 / ROCKNIX",
   "main": "template/main.js",
   "type": "module",
