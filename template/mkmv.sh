@@ -5,7 +5,7 @@
 # ==============================================================================
 
 # ⭐ [설정] 기본 게임 폴더명 (폴더명을 바꾸셨다면 아래 이름을 일치시켜 주세요)
-GAME_CODE="ST3739190"
+GAME_CODE="mkmv"
 
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}" .sh)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
