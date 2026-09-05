@@ -3,6 +3,77 @@ const path = require('path');
 const fs = require('fs');
 const originalRequire = Module.prototype.require;
 
+// 1. RPG Maker MV 작업 디렉토리 및 메인 모듈 경로 설정
+const wwwPath = path.join(__dirname, 'www');
+try {
+  process.chdir(wwwPath);
+} catch (e) {}
+
+// Linux ext4 파일시스템 대소문자 불일치 대응 (Node.js fs API 가상화)
+const dirCache = new Map();
+
+function getCaseInsensitiveChild(parentDir, childName) {
+  let cache = dirCache.get(parentDir);
+  if (!cache) {
+    try {
+      const entries = fs.readdirSync(parentDir);
+      cache = new Map();
+      for (const entry of entries) {
+        cache.set(entry.toLowerCase(), entry);
+      }
+      dirCache.set(parentDir, cache);
+    } catch (e) {
+      return null;
+    }
+  }
+  return cache.get(childName.toLowerCase()) || null;
+}
+
+function resolveCaseInsensitive(targetPath, baseDir = wwwPath) {
+  if (!targetPath || typeof targetPath !== 'string') return targetPath;
+  if (fs.existsSync(targetPath)) return targetPath;
+  const normalizedTarget = path.resolve(targetPath);
+  const normalizedBase = path.resolve(baseDir);
+
+  if (normalizedTarget.startsWith(normalizedBase)) {
+    let current = normalizedBase;
+    const rel = path.relative(normalizedBase, normalizedTarget);
+    const relParts = rel.split(/[/\\]+/).filter(Boolean);
+    for (const part of relParts) {
+      const match = getCaseInsensitiveChild(current, part);
+      if (!match) return targetPath;
+      current = path.join(current, match);
+    }
+    return current;
+  }
+  return targetPath;
+}
+
+const origExistsSync = fs.existsSync;
+const origReadFileSync = fs.readFileSync;
+const origReadFile = fs.readFile;
+const origStatSync = fs.statSync;
+
+fs.existsSync = function(p) {
+  try {
+    return origExistsSync.call(fs, resolveCaseInsensitive(p, wwwPath));
+  } catch (e) {
+    return origExistsSync.call(fs, p);
+  }
+};
+
+fs.readFileSync = function(p, options) {
+  return origReadFileSync.call(fs, resolveCaseInsensitive(p, wwwPath), options);
+};
+
+fs.statSync = function(p, options) {
+  return origStatSync.call(fs, resolveCaseInsensitive(p, wwwPath), options);
+};
+
+fs.readFile = function(p, ...args) {
+  return origReadFile.call(fs, resolveCaseInsensitive(p, wwwPath), ...args);
+};
+
 // 사용자 정의 옵션 (config.json) 로드
 let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false };
 try {
@@ -10,30 +81,6 @@ try {
   if (fs.existsSync(configPath)) {
     userOpt = Object.assign(userOpt, JSON.parse(fs.readFileSync(configPath, 'utf8')));
   }
-} catch (e) {}
-
-// Native window resize & move prevention (Community_Basic.js 등 플러그인의 창 축소 원천 차단)
-const noop = (...args) => {
-  console.log('[mkmv-preload] Intercepted window resize/move attempt:', ...args);
-};
-window.resizeTo = noop;
-window.resizeBy = noop;
-window.moveTo = noop;
-window.moveBy = noop;
-
-try {
-  Object.defineProperties(window, {
-    resizeTo: { value: noop, writable: false, configurable: false },
-    resizeBy: { value: noop, writable: false, configurable: false },
-    moveTo: { value: noop, writable: false, configurable: false },
-    moveBy: { value: noop, writable: false, configurable: false }
-  });
-} catch (e) {}
-
-// 1. RPG Maker MV 작업 디렉토리 및 메인 모듈 경로 설정
-const wwwPath = path.join(__dirname, 'www');
-try {
-  process.chdir(wwwPath);
 } catch (e) {}
 
 if (!process.mainModule) {

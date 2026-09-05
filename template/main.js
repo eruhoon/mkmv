@@ -1,6 +1,46 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+// Linux ext4 파일시스템 대소문자 불일치 404 방지 캐시 및 실시간 탐색기
+const dirCache = new Map();
+
+function getCaseInsensitiveChild(parentDir, childName) {
+  let cache = dirCache.get(parentDir);
+  if (!cache) {
+    try {
+      const entries = fs.readdirSync(parentDir);
+      cache = new Map();
+      for (const entry of entries) {
+        cache.set(entry.toLowerCase(), entry);
+      }
+      dirCache.set(parentDir, cache);
+    } catch (e) {
+      return null;
+    }
+  }
+  return cache.get(childName.toLowerCase()) || null;
+}
+
+function resolveCaseInsensitive(targetPath, baseDir = __dirname) {
+  if (!targetPath || typeof targetPath !== 'string') return targetPath;
+  if (fs.existsSync(targetPath)) return targetPath;
+  const normalizedTarget = path.resolve(targetPath);
+  const normalizedBase = path.resolve(baseDir);
+
+  if (normalizedTarget.startsWith(normalizedBase)) {
+    let current = normalizedBase;
+    const rel = path.relative(normalizedBase, normalizedTarget);
+    const relParts = rel.split(/[/\\]+/).filter(Boolean);
+    for (const part of relParts) {
+      const match = getCaseInsensitiveChild(current, part);
+      if (!match) return targetPath;
+      current = path.join(current, match);
+    }
+    return current;
+  }
+  return targetPath;
+}
 
 // 사용자 정의 옵션 (config.json) 로드
 let opt = {
@@ -137,6 +177,20 @@ ipcMain.on('app-quit', () => {
 });
 
 app.whenReady().then(() => {
+  // Linux ext4 대소문자 불일치 404 방지: file:// 프로토콜 가로채기
+  protocol.interceptFileProtocol('file', (request, callback) => {
+    try {
+      let pathname = decodeURIComponent(new URL(request.url).pathname);
+      if (process.platform === 'win32' && pathname.startsWith('/') && pathname.length > 2 && pathname[2] === ':') {
+        pathname = pathname.slice(1);
+      }
+      const resolved = resolveCaseInsensitive(pathname, __dirname);
+      callback({ path: resolved });
+    } catch (e) {
+      callback({ error: -6 }); // net::ERR_FILE_NOT_FOUND
+    }
+  });
+
   createWindow();
 
   app.on('activate', () => {
