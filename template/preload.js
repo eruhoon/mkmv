@@ -563,11 +563,16 @@ function createFallbackFpsOverlay() {
   overlay.style.setProperty('display', 'block', 'important');
   overlay.textContent = 'FPS: --';
 
-  if (document.body) {
-    document.body.appendChild(overlay);
-  } else {
-    document.documentElement.appendChild(overlay);
-  }
+  const attach = () => {
+    if (document.body) {
+      document.body.appendChild(overlay);
+    } else {
+      document.addEventListener('DOMContentLoaded', () => {
+        if (document.body) document.body.appendChild(overlay);
+      });
+    }
+  };
+  attach();
 
   let frameCount = 0;
   let lastTime = performance.now();
@@ -595,7 +600,7 @@ function createFallbackFpsOverlay() {
 
 setupFpsMeter();
 
-// 9. 고속 배속(Fast-Forward / 터보) 시스템 (R3 버튼 또는 R 키로 토글)
+// 9. 고속 배속(Fast-Forward / 터보) 시스템 (R3 버튼 또는 R/Tab 키로 토글)
 function setupFastForward() {
   if (!userOpt.fastForward) return;
 
@@ -603,54 +608,58 @@ function setupFastForward() {
   let isFastForward = false;
   let indicator = null;
 
-  function createIndicator() {
-    if (document.getElementById('mkmv-fast-forward')) return;
-    indicator = document.createElement('div');
-    indicator.id = 'mkmv-fast-forward';
-    indicator.style.setProperty('display', 'none', 'important');
-    indicator.style.setProperty('position', 'fixed', 'important');
-    indicator.style.setProperty('top', '10px', 'important');
-    indicator.style.setProperty('right', '12px', 'important');
-    indicator.style.setProperty('z-index', '2147483647', 'important');
-    indicator.style.setProperty('background-color', 'rgba(0, 0, 0, 0.75)', 'important');
-    indicator.style.setProperty('color', '#00e5ff', 'important');
-    indicator.style.setProperty('font-family', 'monospace, sans-serif', 'important');
-    indicator.style.setProperty('font-size', '14px', 'important');
-    indicator.style.setProperty('font-weight', 'bold', 'important');
-    indicator.style.setProperty('padding', '3px 8px', 'important');
-    indicator.style.setProperty('border-radius', '4px', 'important');
-    indicator.style.setProperty('border', '1px solid rgba(0, 229, 255, 0.6)', 'important');
-    indicator.style.setProperty('box-shadow', '0 0 8px rgba(0, 229, 255, 0.4)', 'important');
-    indicator.style.setProperty('pointer-events', 'none', 'important');
-    indicator.style.setProperty('user-select', 'none', 'important');
-    indicator.textContent = `▶▶ ${speedMultiplier}x`;
-
-    const attach = () => {
-      if (document.body) {
-        document.body.appendChild(indicator);
-      } else {
-        document.documentElement.appendChild(indicator);
-      }
-    };
-    attach();
+  function ensureIndicator() {
+    if (!indicator) {
+      indicator = document.getElementById('mkmv-fast-forward');
+    }
+    if (!indicator) {
+      if (!document.body) return null;
+      indicator = document.createElement('div');
+      indicator.id = 'mkmv-fast-forward';
+      indicator.style.setProperty('display', 'none', 'important');
+      indicator.style.setProperty('position', 'fixed', 'important');
+      indicator.style.setProperty('top', '10px', 'important');
+      indicator.style.setProperty('right', '12px', 'important');
+      indicator.style.setProperty('z-index', '2147483647', 'important');
+      indicator.style.setProperty('background-color', 'rgba(0, 0, 0, 0.75)', 'important');
+      indicator.style.setProperty('color', '#00e5ff', 'important');
+      indicator.style.setProperty('font-family', 'monospace, sans-serif', 'important');
+      indicator.style.setProperty('font-size', '14px', 'important');
+      indicator.style.setProperty('font-weight', 'bold', 'important');
+      indicator.style.setProperty('padding', '3px 8px', 'important');
+      indicator.style.setProperty('border-radius', '4px', 'important');
+      indicator.style.setProperty('border', '1px solid rgba(0, 229, 255, 0.6)', 'important');
+      indicator.style.setProperty('box-shadow', '0 0 8px rgba(0, 229, 255, 0.4)', 'important');
+      indicator.style.setProperty('pointer-events', 'none', 'important');
+      indicator.style.setProperty('user-select', 'none', 'important');
+      indicator.textContent = `▶▶ ${speedMultiplier}x`;
+      document.body.appendChild(indicator);
+    }
+    return indicator;
   }
-  createIndicator();
+
+  // DOM 로드 완료 시 인디케이터 안전 준비
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => ensureIndicator());
+  } else {
+    ensureIndicator();
+  }
 
   function toggleFastForward() {
     isFastForward = !isFastForward;
-    if (!indicator) indicator = document.getElementById('mkmv-fast-forward');
-    if (indicator) {
-      indicator.style.setProperty('display', isFastForward ? 'block' : 'none', 'important');
+    const badge = ensureIndicator();
+    if (badge) {
+      badge.style.setProperty('display', isFastForward ? 'block' : 'none', 'important');
       if (isFastForward) {
-        if (indicator.style.zIndex !== '2147483647') {
-          indicator.style.setProperty('z-index', '2147483647', 'important');
+        if (badge.style.zIndex !== '2147483647') {
+          badge.style.setProperty('z-index', '2147483647', 'important');
         }
-        if (document.body && indicator.parentNode !== document.body) {
-          document.body.appendChild(indicator);
+        if (document.body && badge.parentNode !== document.body) {
+          document.body.appendChild(badge);
         }
       }
     }
-    console.log(`[mkmv-preload] Fast forward: ${isFastForward ? `${speedMultiplier}x` : '1x'}`);
+    console.log(`[mkmv-preload] Fast forward toggled: ${isFastForward ? `${speedMultiplier}x` : '1x'}`);
   }
 
   // R3 (키보드 R 또는 Tab) 키 토글 바인딩
