@@ -9,6 +9,13 @@ try {
   process.chdir(wwwPath);
 } catch (e) {}
 
+// 원본 fs 메서드 백업 (재귀 호출 방지 및 고속 직접 접근용)
+const origExistsSync = fs.existsSync;
+const origReadFileSync = fs.readFileSync;
+const origReadFile = fs.readFile;
+const origStatSync = fs.statSync;
+const origReaddirSync = fs.readdirSync;
+
 // Linux ext4 파일시스템 대소문자 불일치 대응 (Node.js fs API 가상화)
 const dirCache = new Map();
 
@@ -16,7 +23,7 @@ function getCaseInsensitiveChild(parentDir, childName) {
   let cache = dirCache.get(parentDir);
   if (!cache) {
     try {
-      const entries = fs.readdirSync(parentDir);
+      const entries = origReaddirSync.call(fs, parentDir);
       cache = new Map();
       for (const entry of entries) {
         cache.set(entry.toLowerCase(), entry);
@@ -31,7 +38,7 @@ function getCaseInsensitiveChild(parentDir, childName) {
 
 function resolveCaseInsensitive(targetPath, baseDir = wwwPath) {
   if (!targetPath || typeof targetPath !== 'string') return targetPath;
-  if (fs.existsSync(targetPath)) return targetPath;
+  if (origExistsSync.call(fs, targetPath)) return targetPath;
   const normalizedTarget = path.resolve(targetPath);
   const normalizedBase = path.resolve(baseDir);
 
@@ -48,11 +55,6 @@ function resolveCaseInsensitive(targetPath, baseDir = wwwPath) {
   }
   return targetPath;
 }
-
-const origExistsSync = fs.existsSync;
-const origReadFileSync = fs.readFileSync;
-const origReadFile = fs.readFile;
-const origStatSync = fs.statSync;
 
 fs.existsSync = function(p) {
   try {
@@ -78,8 +80,8 @@ fs.readFile = function(p, ...args) {
 let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false };
 try {
   const configPath = path.join(__dirname, 'config.json');
-  if (fs.existsSync(configPath)) {
-    userOpt = Object.assign(userOpt, JSON.parse(fs.readFileSync(configPath, 'utf8')));
+  if (origExistsSync.call(fs, configPath)) {
+    userOpt = Object.assign(userOpt, JSON.parse(origReadFileSync.call(fs, configPath, 'utf8')));
   }
 } catch (e) {}
 
@@ -390,17 +392,18 @@ function setupFallbackFont() {
     '/roms2/ports/PortMaster/resources/NotoSansKR-Regular.otf'          // 2nd SD Card
   ].filter(Boolean);
 
-  const fontPath = possiblePaths.find(p => fs.existsSync(p));
+  const fontPath = possiblePaths.find(p => origExistsSync.call(fs, p));
   if (!fontPath) {
     console.log('[mkmv-preload] No fallback CJK font file found');
     return;
   }
 
   try {
-    const fontBuf = fs.readFileSync(fontPath);
+    const fontBuf = origReadFileSync.call(fs, fontPath);
     const fontArrayBuffer = fontBuf.buffer.slice(fontBuf.byteOffset, fontBuf.byteOffset + fontBuf.byteLength);
 
     const fontFamilies = [
+      'GameFont',
       'Noto Sans CJK KR',
       'NotoSansCJKkr',
       'Dotum',
@@ -465,3 +468,22 @@ function setupFallbackFont() {
   setTimeout(() => clearInterval(fontTimer), 10000);
 }
 setupFallbackFont();
+
+// 7. RPG Maker MV 부팅 폰트 검사 무한 대기(Freezing / Black Screen) 방지 가드
+function patchFontReady() {
+  if (window.Graphics) {
+    window.Graphics.isFontLoaded = function() { return true; };
+  }
+  if (window.Scene_Boot && window.Scene_Boot.prototype) {
+    window.Scene_Boot.prototype.isGameFontLoaded = function() { return true; };
+  }
+}
+
+const fontReadyTimer = setInterval(() => {
+  patchFontReady();
+  if (window.Scene_Boot && window.Scene_Boot.prototype && window.Scene_Boot.prototype.isGameFontLoaded) {
+    patchFontReady();
+    clearInterval(fontReadyTimer);
+  }
+}, 20);
+setTimeout(() => clearInterval(fontReadyTimer), 15000);

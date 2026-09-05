@@ -77,7 +77,6 @@ try {
 if (opt.lowMemoryMode) {
   console.log('[mkmv] lowMemoryMode enabled: restricting V8 heap to 512MB');
   app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
-  app.commandLine.appendSwitch('renderer-process-limit', '1');
 }
 
 // Wayland & Ozone platform settings
