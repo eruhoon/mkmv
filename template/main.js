@@ -111,10 +111,7 @@ function createWindow() {
     try {
       win.webContents.setZoomFactor(opt.forceDeviceScaleFactor || 1);
     } catch (e) {}
-    if (opt.fullscreen !== false) {
-      win.setFullScreen(true);
-      win.maximize();
-    }
+    console.log('[mkmv] Content loaded, focusing window');
     win.focus();
     win.webContents.focus();
   });
