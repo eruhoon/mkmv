@@ -145,6 +145,10 @@ async function build() {
   console.log(`[mkmv] Creating distribution zip: dist/${ZIP_NAME}...`);
   const distZip = new AdmZip();
   distZip.addLocalFile(launcherDest);
+  const howToUseSrc = path.join(ROOT_DIR, 'HOW_TO_USE.md');
+  if (fs.existsSync(howToUseSrc)) {
+    distZip.addLocalFile(howToUseSrc);
+  }
   distZip.addLocalFolder(DIST_APP_DIR, 'mkmv');
 
   distZip.writeZip(DIST_ZIP_PATH);
