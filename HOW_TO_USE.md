@@ -108,7 +108,7 @@ SD카드:/roms/ports/
   "hideCursor": false,
   "disableTouch": false,
   "showFps": false,
-  "fastForward": false,
+  "fastForward": true,
   "fastForwardSpeed": 2,
   "lowMemoryMode": true
 }

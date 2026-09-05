@@ -153,7 +153,7 @@ fs.writeFileSync = function(p, data, options) {
 };
 
 // 사용자 정의 옵션 (config.json) 로드
-let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false, showFps: false, fastForward: false, fastForwardSpeed: 2 };
+let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false, showFps: false, fastForward: true, fastForwardSpeed: 2 };
 try {
   const configPath = path.join(__dirname, 'config.json');
   if (origExistsSync.call(fs, configPath)) {
@@ -762,7 +762,7 @@ setupFpsMeter();
 
 // 9. 고속 배속(Fast-Forward / 터보) 시스템 (R3 버튼 또는 R/Tab 키로 토글)
 function setupFastForward() {
-  if (!userOpt.fastForward) return;
+  if (userOpt.fastForward === false) return;
 
   const speedMultiplier = Math.max(1, Number(userOpt.fastForwardSpeed) || 2);
   let isFastForward = false;
@@ -825,7 +825,9 @@ function setupFastForward() {
   // R3 (키보드 R 또는 Tab) 키 토글 바인딩
   window.addEventListener('keydown', (e) => {
     const key = e.key ? e.key.toUpperCase() : '';
-    if ((key === 'R' || key === 'TAB') && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    const isR = key === 'R' || e.code === 'KeyR' || e.keyCode === 82;
+    const isTab = key === 'TAB' || e.code === 'Tab' || e.keyCode === 9;
+    if ((isR || isTab) && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
       toggleFastForward();
     }
