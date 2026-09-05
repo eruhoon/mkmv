@@ -1,13 +1,15 @@
+console.log('[mkmv-preload] Preload script initializing...');
+process.on('uncaughtException', (err) => {
+  console.error('[mkmv-preload uncaughtException]', err && err.stack ? err.stack : err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[mkmv-preload unhandledRejection]', reason);
+});
+
 const Module = require('module');
 const path = require('path');
 const fs = require('fs');
 const originalRequire = Module.prototype.require;
-
-// 1. RPG Maker MV 작업 디렉토리 및 메인 모듈 경로 설정
-const wwwPath = path.join(__dirname, 'www');
-try {
-  process.chdir(wwwPath);
-} catch (e) {}
 
 // 원본 fs 메서드 백업 (재귀 호출 방지 및 고속 직접 접근용)
 const origExistsSync = fs.existsSync;
@@ -22,6 +24,28 @@ const origOpenSync = fs.openSync;
 const origWriteSync = fs.writeSync;
 const origFsyncSync = fs.fsyncSync;
 const origCloseSync = fs.closeSync;
+
+// 1. RPG Maker MV & MZ 작업 디렉토리 및 메인 모듈 경로 자동 감지
+function detectGameDirectory(baseDir) {
+  const candidates = ['game', 'www'];
+  for (const sub of candidates) {
+    const candidatePath = path.join(baseDir, sub);
+    if (origExistsSync.call(fs, path.join(candidatePath, 'index.html'))) {
+      return candidatePath;
+    }
+  }
+  if (origExistsSync.call(fs, path.join(baseDir, 'index.html'))) {
+    return baseDir;
+  }
+  return path.join(baseDir, 'www'); // 기본값
+}
+
+const gameDir = detectGameDirectory(__dirname);
+const isMZ = origExistsSync.call(fs, path.join(gameDir, 'js', 'rmmz_core.js'));
+
+try {
+  process.chdir(gameDir);
+} catch (e) {}
 
 // Linux ext4 파일시스템 대소문자 불일치 대응 (Node.js fs API 가상화)
 const dirCache = new Map();
@@ -43,7 +67,7 @@ function getCaseInsensitiveChild(parentDir, childName) {
   return cache.get(childName.toLowerCase()) || null;
 }
 
-function resolveCaseInsensitive(targetPath, baseDir = wwwPath) {
+function resolveCaseInsensitive(targetPath, baseDir = gameDir) {
   if (!targetPath || typeof targetPath !== 'string') return targetPath;
   targetPath = targetPath.replace(/\uFEFF/g, '');
   if (origExistsSync.call(fs, targetPath)) return targetPath;
@@ -66,14 +90,14 @@ function resolveCaseInsensitive(targetPath, baseDir = wwwPath) {
 
 fs.existsSync = function(p) {
   try {
-    return origExistsSync.call(fs, resolveCaseInsensitive(p, wwwPath));
+    return origExistsSync.call(fs, resolveCaseInsensitive(p, gameDir));
   } catch (e) {
     return origExistsSync.call(fs, p);
   }
 };
 
 fs.readFileSync = function(p, options) {
-  const resolved = resolveCaseInsensitive(p, wwwPath);
+  const resolved = resolveCaseInsensitive(p, gameDir);
   let content;
   try {
     content = origReadFileSync.call(fs, resolved, options);
@@ -97,8 +121,8 @@ fs.readFileSync = function(p, options) {
       content = options ? str : Buffer.from(str, 'utf8');
     }
   }
-  // 세이브 파일이 0바이트로 손상되었을 경우 직전 정상 백업(.bak) 자동 복구
-  if (typeof p === 'string' && p.endsWith('.rpgsave') && (!content || content.length === 0)) {
+  // 세이브 파일이 0바이트로 손상되었을 경우 직전 정상 백업(.bak) 자동 복구 (MV .rpgsave 및 MZ .rmmzsave 지원)
+  if (typeof p === 'string' && (p.endsWith('.rpgsave') || p.endsWith('.rmmzsave')) && (!content || content.length === 0)) {
     const bakFile = resolved + '.bak';
     if (origExistsSync.call(fs, bakFile)) {
       console.warn(`[mkmv-preload] Corrupted 0-byte save detected for ${p}, restoring from ${bakFile}`);
@@ -111,17 +135,22 @@ fs.readFileSync = function(p, options) {
 };
 
 fs.statSync = function(p, options) {
-  return origStatSync.call(fs, resolveCaseInsensitive(p, wwwPath), options);
+  return origStatSync.call(fs, resolveCaseInsensitive(p, gameDir), options);
 };
 
 fs.readFile = function(p, ...args) {
-  return origReadFile.call(fs, resolveCaseInsensitive(p, wwwPath), ...args);
+  return origReadFile.call(fs, resolveCaseInsensitive(p, gameDir), ...args);
 };
 
 // 세이브 파일 파손 방지 (원자적 쓰기 + 물리 SD 카드 fsync 플러시 + 자동 .bak 백업)
 fs.writeFileSync = function(p, data, options) {
-  const resolvedPath = resolveCaseInsensitive(p, wwwPath);
-  const isSaveFile = typeof p === 'string' && (p.endsWith('.rpgsave') || p.includes('/save/') || p.includes('\\save\\'));
+  const resolvedPath = resolveCaseInsensitive(p, gameDir);
+  const isSaveFile = typeof p === 'string' && (
+    p.endsWith('.rpgsave') || 
+    p.endsWith('.rmmzsave') || 
+    p.includes('/save/') || 
+    p.includes('\\save\\')
+  );
 
   if (isSaveFile) {
     try {
@@ -162,9 +191,9 @@ try {
 } catch (e) {}
 
 if (!process.mainModule) {
-  process.mainModule = { filename: path.join(wwwPath, 'index.html') };
+  process.mainModule = { filename: path.join(gameDir, 'index.html') };
 } else {
-  process.mainModule.filename = path.join(wwwPath, 'index.html');
+  process.mainModule.filename = path.join(gameDir, 'index.html');
 }
 
 // 캔버스 2D 픽셀 데이터 빈번한 읽기(getImageData) 시 CPU 성능 최적화 및 경고 방지
@@ -178,12 +207,12 @@ try {
   };
 } catch (e) {}
 
-// 2. NW.js 호환성 객체 (알만툴 MV 필수 모듈 Shim)
+// 2. NW.js 호환성 객체 (알만툴 MV & MZ 필수 모듈 Shim)
 const nwShim = {
   App: {
     argv: [],
-    fullPath: wwwPath,
-    dataPath: wwwPath,
+    fullPath: gameDir,
+    dataPath: gameDir,
     quit: () => {
       try {
         require('electron').ipcRenderer.send('app-quit');
@@ -535,10 +564,10 @@ function setupFallbackFont() {
     path.join(__dirname, 'fonts', 'NotoSansCJKkr-Regular.otf'),
     path.join(__dirname, 'fonts', 'NotoSansKR-Regular.otf'),
     path.join(__dirname, 'fonts', 'NotoSansKR-Regular.ttf'),
-    path.join(wwwPath, 'fonts', 'NotoSansCJKkr-Regular.otf'),
-    path.join(wwwPath, 'fonts', 'NotoSansKR-Regular.otf'),
-    path.join(wwwPath, 'fonts', 'NotoSansKR-Regular.ttf'),
-    path.join(wwwPath, 'fonts', 'LINESeedKR-Rg.ttf'),
+    path.join(gameDir, 'fonts', 'NotoSansCJKkr-Regular.otf'),
+    path.join(gameDir, 'fonts', 'NotoSansKR-Regular.otf'),
+    path.join(gameDir, 'fonts', 'NotoSansKR-Regular.ttf'),
+    path.join(gameDir, 'fonts', 'LINESeedKR-Rg.ttf'),
 
     // 2순위: 런처 스크립트가 전달한 포트마스터 동적 홈 경로 ($controlfolder)
     process.env.PORTMASTER_HOME ? path.join(process.env.PORTMASTER_HOME, 'resources', 'NotoSansKR-Regular.otf') : null,
@@ -578,7 +607,10 @@ function setupFallbackFont() {
       'YuGothic',
       'Hiragino Kaku Gothic ProN',
       'IPAGothic',
-      'IPAMincho'
+      'IPAMincho',
+      // RPG Maker MZ 전용 표준 폰트 호환성 추가
+      'rmmz-mainfont',
+      'rmmz-numberfont'
     ];
 
     fontFamilies.forEach(family => {
@@ -597,13 +629,18 @@ function setupFallbackFont() {
     console.warn('[mkmv-preload] Error reading fallback font file:', e);
   }
 
-  // RPG Maker MV 폰트 체인 패치 (누락된 한글/일본어/한자 글리프 자동 폴백)
-  const fontChain = 'GameFont, "Noto Sans CJK KR", "NotoSansCJKkr", "Meiryo", "MS Gothic", "Yu Gothic", "Dotum", "AppleGothic", "SimHei", sans-serif';
+  // RPG Maker MV & MZ 폰트 체인 패치 (누락된 한글/일본어/한자 글리프 자동 폴백)
+  const fontChain = 'rmmz-mainfont, GameFont, "Noto Sans CJK KR", "NotoSansCJKkr", "Meiryo", "MS Gothic", "Yu Gothic", "Dotum", "AppleGothic", "SimHei", sans-serif';
 
   const patchFontChain = () => {
     if (window.Window_Base && window.Window_Base.prototype) {
+      const origStandardFontFace = window.Window_Base.prototype.standardFontFace;
       window.Window_Base.prototype.standardFontFace = function() {
-        return fontChain;
+        const base = origStandardFontFace ? origStandardFontFace.apply(this, arguments) : '';
+        if (base && !base.includes('Noto Sans CJK KR')) {
+          return base + ', "Noto Sans CJK KR", "Dotum", "AppleGothic", sans-serif';
+        }
+        return base;
       };
     }
 
@@ -629,13 +666,18 @@ function setupFallbackFont() {
 }
 setupFallbackFont();
 
-// 7. RPG Maker MV 부팅 폰트 검사 무한 대기(Freezing / Black Screen) 방지 가드
+// 7. RPG Maker MV & MZ 부팅 폰트 검사 무한 대기(Freezing / Black Screen) 방지 가드
 function patchFontReady() {
   if (window.Graphics) {
     window.Graphics.isFontLoaded = function() { return true; };
   }
   if (window.Scene_Boot && window.Scene_Boot.prototype) {
     window.Scene_Boot.prototype.isGameFontLoaded = function() { return true; };
+  }
+  if (window.FontManager) {
+    window.FontManager.throwLoadError = function(family) {
+      console.warn(`[mkmv-preload] Suppressed FontManager LoadError for ${family}`);
+    };
   }
 }
 
@@ -844,8 +886,17 @@ function setupFastForward() {
           return origUpdateMain.apply(this, arguments);
         }
 
-        // Fast-forward 가속 연산
-        if (typeof Utils !== 'undefined' && Utils.isMobileSafari && Utils.isMobileSafari()) {
+        // Fast-forward 가속 연산 (MZ 및 MV 통합 지원)
+        if (isMZ || typeof this._deltaTime === 'undefined') {
+          for (let i = 0; i < speedMultiplier; i++) {
+            if (typeof this.updateFrameCount === 'function') this.updateFrameCount();
+            if (typeof this.updateInputData === 'function') this.updateInputData();
+            if (typeof this.updateEffekseer === 'function') this.updateEffekseer();
+            if (typeof this.changeScene === 'function') this.changeScene();
+            if (typeof this.updateScene === 'function') this.updateScene();
+          }
+          return; // MZ는 Pixi Ticker가 렌더링을 직접 담당하므로 updateMain 종료
+        } else if (typeof Utils !== 'undefined' && Utils.isMobileSafari && Utils.isMobileSafari()) {
           for (let i = 0; i < speedMultiplier; i++) {
             this.changeScene();
             this.updateScene();
@@ -871,13 +922,15 @@ function setupFastForward() {
           }
         }
 
-        // 배속 시 CPU 렌더링 부하/발열 절반 절감을 위한 프레임 스킵 (2프레임당 1회 렌더링)
+        // 알만툴 MV 전용: 배속 시 CPU 렌더링 부하/발열 절반 절감을 위한 프레임 스킵 (2프레임당 1회 렌더링)
         renderSkipCounter = (renderSkipCounter + 1) % 2;
-        if (renderSkipCounter === 0) {
+        if (renderSkipCounter === 0 && typeof this.renderScene === 'function') {
           this.renderScene();
         }
 
-        this.requestUpdate();
+        if (typeof this.requestUpdate === 'function') {
+          this.requestUpdate();
+        }
       };
       clearInterval(hookTimer);
       console.log(`[mkmv-preload] Fast forward engine hook installed (${speedMultiplier}x available on R3 with thermal frame-skip)`);

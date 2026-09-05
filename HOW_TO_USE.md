@@ -1,6 +1,6 @@
-# 🎮 RPG Maker MV 포트마스터 템플릿 사용 가이드 (ROCKNIX / KNULLI / ARM64)
+# 🎮 RPG Maker MV & MZ 포트마스터 통합 템플릿 사용 가이드 (ROCKNIX / KNULLI / ARM64)
 
-이 패키지는 Anbernic 등 Linux ARM64 휴대용 게임기(**ROCKNIX**, **KNULLI**, Batocera 등)에서 **모든 RPG Maker MV 게임을 단 몇 번의 복사만으로 손쉽게 추가/증식**할 수 있도록 모든 필수 런타임, 키 매핑, 플러그인 호환성 레이어가 완벽히 패키징된 **순정 템플릿(Master Template)**입니다.
+이 패키지는 Anbernic 등 Linux ARM64 휴대용 게임기(**ROCKNIX**, **KNULLI**, Batocera 등)에서 **모든 RPG Maker MV 및 MZ 게임을 단 몇 번의 복사만으로 손쉽게 추가/증식**할 수 있도록 모든 필수 런타임, 키 매핑, 플러그인 호환성 레이어가 완벽히 패키징된 **순정 통합 템플릿(Master Template)**입니다.
 
 ---
 
@@ -19,7 +19,8 @@ mkmv/
 ├── fonts/                          # ⭐ Noto Sans CJK KR 자동 폴백 폰트
 ├── port.json                       # 포트마스터 메타데이터
 ├── locales/, resources/...         # 필수 런타임 에셋
-└── www/                            # ⭐ [게임 파일(www)을 넣는 곳]
+├── www/                            # ⭐ [알만툴 MV 게임 내용물을 넣는 곳]
+└── game/                           # ⭐ [알만툴 MZ 게임 내용물을 넣는 곳 (선택)]
 ```
 
 ---
@@ -36,17 +37,30 @@ mkmv/
 
 ---
 
-### 2단계. 게임 파일(www) 넣기
-플레이할 RPG Maker MV 게임의 **`www` 폴더 내용물**을 복제한 폴더의 `www` 안에 넣습니다:
+### 2단계. 게임 파일 넣기 (MV vs MZ 독립 분리)
+엔진 종류에 따라 게임 폴더 안에 파일들을 넣습니다. 러너 핵심 파일들과 섞이지 않고 완전히 분리됩니다:
+
+* **RPG Maker MV 게임**: 게임 배포본의 **`www` 폴더 내용물**을 `MyGame/www/` 에 넣습니다.
+* **RPG Maker MZ 게임**: 게임 배포본의 **루트 내용물**(`index.html`, `js/rmmz_*.js` 등)을 `MyGame/game/` 에 넣습니다. (기존처럼 `www/`에 넣어도 자동 감지)
 
 ```text
+# 알만툴 MV인 경우:
 MyGame/
 └── www/
     ├── index.html       ← (필수)
-    ├── js/              ← (스크립트 및 플러그인)
-    ├── data/            ← (맵 및 데이터)
-    ├── img/             ← (그래픽/일러스트)
-    └── audio/           ← (BGM 및 효과음)
+    ├── js/
+    ├── data/
+    ├── img/
+    └── audio/
+
+# 알만툴 MZ인 경우:
+MyGame/
+└── game/
+    ├── index.html       ← (필수)
+    ├── js/              ← (rmmz_core.js 등)
+    ├── data/
+    ├── img/
+    └── audio/
 ```
 
 ---

@@ -71,10 +71,27 @@ try {
   console.error('[mkmv] config.json load error:', e);
 }
 
-// RPG Maker MV 워킹 디렉토리를 www 폴더로 변경 (플러그인 및 세이브 데이터 경로 일치)
-const wwwDir = path.join(__dirname, 'www');
+// 알만툴 MV / MZ 게임 디렉토리 격리 감지 (game/ 우선, 그 다음 www/, 최후 폴백으로 루트)
+function detectGameDirectory(baseDir) {
+  const candidates = ['game', 'www'];
+  for (const sub of candidates) {
+    const candidatePath = path.join(baseDir, sub);
+    if (fs.existsSync(path.join(candidatePath, 'index.html'))) {
+      return candidatePath;
+    }
+  }
+  if (fs.existsSync(path.join(baseDir, 'index.html'))) {
+    return baseDir;
+  }
+  return path.join(baseDir, 'www'); // 기본값
+}
+
+const gameDir = detectGameDirectory(__dirname);
+const isMZ = fs.existsSync(path.join(gameDir, 'js', 'rmmz_core.js'));
+console.log(`[mkmv] Detected Game Engine: ${isMZ ? 'RPG Maker MZ' : 'RPG Maker MV'}, Directory: ${gameDir}`);
+
 try {
-  process.chdir(wwwDir);
+  process.chdir(gameDir);
 } catch (e) {}
 
 // 저사양 1GB 기기용 메모리 제한 모드 (OOM 킬러 방지)
@@ -168,7 +185,8 @@ function createWindow() {
     }
   });
 
-  const indexPath = path.join(wwwDir, 'index.html');
+  const indexPath = path.join(gameDir, 'index.html');
+  console.log('[mkmv] Loading game file:', indexPath);
   win.loadFile(indexPath);
 
   win.webContents.on('did-finish-load', () => {
@@ -178,6 +196,18 @@ function createWindow() {
     console.log('[mkmv] Content loaded, focusing window');
     win.focus();
     win.webContents.focus();
+  });
+
+  win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[mkmv] did-fail-load: ${errorCode} (${errorDescription}) on ${validatedURL}`);
+  });
+
+  win.webContents.on('render-process-gone', (event, details) => {
+    console.error(`[mkmv] Render process gone! Reason: ${details.reason}, ExitCode: ${details.exitCode}`);
+  });
+
+  win.webContents.on('plugin-crashed', (event, name, version) => {
+    console.error(`[mkmv] Plugin crashed: ${name} v${version}`);
   });
 
   win.on('closed', () => {
