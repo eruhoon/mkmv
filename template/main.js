@@ -24,6 +24,7 @@ function getCaseInsensitiveChild(parentDir, childName) {
 
 function resolveCaseInsensitive(targetPath, baseDir = __dirname) {
   if (!targetPath || typeof targetPath !== 'string') return targetPath;
+  targetPath = targetPath.replace(/\uFEFF/g, '');
   if (fs.existsSync(targetPath)) return targetPath;
   const normalizedTarget = path.resolve(targetPath);
   const normalizedBase = path.resolve(baseDir);
@@ -193,6 +194,7 @@ app.whenReady().then(() => {
   protocol.interceptFileProtocol('file', (request, callback) => {
     try {
       let pathname = decodeURIComponent(new URL(request.url).pathname);
+      pathname = pathname.replace(/\uFEFF/g, '');
       if (process.platform === 'win32' && pathname.startsWith('/') && pathname.length > 2 && pathname[2] === ':') {
         pathname = pathname.slice(1);
       }

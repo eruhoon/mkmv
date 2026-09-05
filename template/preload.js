@@ -45,6 +45,7 @@ function getCaseInsensitiveChild(parentDir, childName) {
 
 function resolveCaseInsensitive(targetPath, baseDir = wwwPath) {
   if (!targetPath || typeof targetPath !== 'string') return targetPath;
+  targetPath = targetPath.replace(/\uFEFF/g, '');
   if (origExistsSync.call(fs, targetPath)) return targetPath;
   const normalizedTarget = path.resolve(targetPath);
   const normalizedBase = path.resolve(baseDir);
@@ -73,7 +74,29 @@ fs.existsSync = function(p) {
 
 fs.readFileSync = function(p, options) {
   const resolved = resolveCaseInsensitive(p, wwwPath);
-  let content = origReadFileSync.call(fs, resolved, options);
+  let content;
+  try {
+    content = origReadFileSync.call(fs, resolved, options);
+  } catch (err) {
+    // 번역/다국어 패치 게임에서 누락된 lng.txt 파일 자동 복구 ('ko' 기본값 생성 및 반환)
+    if (typeof p === 'string' && (p === 'lng.txt' || p.endsWith('/lng.txt') || p.endsWith('\\lng.txt'))) {
+      console.warn(`[mkmv-preload] Missing ${p} detected, automatically generating fallback language 'ko'`);
+      try {
+        origWriteFileSync.call(fs, resolved, 'ko', 'utf8');
+      } catch (e) {}
+      return 'ko';
+    }
+    throw err;
+  }
+  // lng.txt 파일의 UTF-8 BOM(\uFEFF) 및 개행 문자 정제 (경로 접두사 오염 방지)
+  if (typeof p === 'string' && (p === 'lng.txt' || p.endsWith('/lng.txt') || p.endsWith('\\lng.txt'))) {
+    if (typeof content === 'string') {
+      content = content.replace(/^\uFEFF/, '').trim();
+    } else if (Buffer.isBuffer(content)) {
+      const str = content.toString('utf8').replace(/^\uFEFF/, '').trim();
+      content = options ? str : Buffer.from(str, 'utf8');
+    }
+  }
   // 세이브 파일이 0바이트로 손상되었을 경우 직전 정상 백업(.bak) 자동 복구
   if (typeof p === 'string' && p.endsWith('.rpgsave') && (!content || content.length === 0)) {
     const bakFile = resolved + '.bak';
@@ -219,15 +242,37 @@ const nwShim = {
   }
 };
 
+// Steamworks (greenworks) Shim 객체 (ARM64 리눅스 바이너리 부재로 인한 플러그인 크래시 방지)
+const greenworksShim = {
+  init: () => false,
+  initAPI: () => false,
+  isSteamRunning: () => false,
+  getAppId: () => 0,
+  activateAchievement: () => {},
+  getAchievement: () => false,
+  clearAchievement: () => {},
+  getNumberOfPlayers: () => 0,
+  activateGameOverlay: () => {},
+  isGameOverlayEnabled: () => false,
+  on: () => {},
+  _events: {},
+  ugcGetItems: () => {},
+  ugcGetUserItems: () => {}
+};
+
 Module.prototype.require = function(id) {
   if (id === 'nw.gui') {
     return nwShim;
+  }
+  if (typeof id === 'string' && id.includes('greenworks')) {
+    return greenworksShim;
   }
   return originalRequire.apply(this, arguments);
 };
 
 window.nw = nwShim;
 window.nwGui = nwShim;
+window.greenworks = greenworksShim;
 
 // 브라우저 창 크기 및 위치 강제 변경 방지 (Yanfly CoreEngine, 인게임 스크립트의 화면 축소 및 쏠림 원천 차단)
 const blockWindowResize = () => {
