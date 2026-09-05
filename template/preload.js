@@ -15,6 +15,13 @@ const origReadFileSync = fs.readFileSync;
 const origReadFile = fs.readFile;
 const origStatSync = fs.statSync;
 const origReaddirSync = fs.readdirSync;
+const origWriteFileSync = fs.writeFileSync;
+const origRenameSync = fs.renameSync;
+const origCopyFileSync = fs.copyFileSync;
+const origOpenSync = fs.openSync;
+const origWriteSync = fs.writeSync;
+const origFsyncSync = fs.fsyncSync;
+const origCloseSync = fs.closeSync;
 
 // Linux ext4 파일시스템 대소문자 불일치 대응 (Node.js fs API 가상화)
 const dirCache = new Map();
@@ -65,7 +72,19 @@ fs.existsSync = function(p) {
 };
 
 fs.readFileSync = function(p, options) {
-  return origReadFileSync.call(fs, resolveCaseInsensitive(p, wwwPath), options);
+  const resolved = resolveCaseInsensitive(p, wwwPath);
+  let content = origReadFileSync.call(fs, resolved, options);
+  // 세이브 파일이 0바이트로 손상되었을 경우 직전 정상 백업(.bak) 자동 복구
+  if (typeof p === 'string' && p.endsWith('.rpgsave') && (!content || content.length === 0)) {
+    const bakFile = resolved + '.bak';
+    if (origExistsSync.call(fs, bakFile)) {
+      console.warn(`[mkmv-preload] Corrupted 0-byte save detected for ${p}, restoring from ${bakFile}`);
+      try {
+        content = origReadFileSync.call(fs, bakFile, options);
+      } catch (e) {}
+    }
+  }
+  return content;
 };
 
 fs.statSync = function(p, options) {
@@ -74,6 +93,40 @@ fs.statSync = function(p, options) {
 
 fs.readFile = function(p, ...args) {
   return origReadFile.call(fs, resolveCaseInsensitive(p, wwwPath), ...args);
+};
+
+// 세이브 파일 파손 방지 (원자적 쓰기 + 물리 SD 카드 fsync 플러시 + 자동 .bak 백업)
+fs.writeFileSync = function(p, data, options) {
+  const resolvedPath = resolveCaseInsensitive(p, wwwPath);
+  const isSaveFile = typeof p === 'string' && (p.endsWith('.rpgsave') || p.includes('/save/') || p.includes('\\save\\'));
+
+  if (isSaveFile) {
+    try {
+      // 1. 기존 정상 세이브를 .bak 백업으로 보존
+      if (origExistsSync.call(fs, resolvedPath)) {
+        try {
+          origCopyFileSync.call(fs, resolvedPath, resolvedPath + '.bak');
+        } catch (e) {}
+      }
+
+      // 2. 임시 파일에 기록 후 물리 디스크(SD 카드) 강제 플러시 (fsync)
+      const tmpPath = resolvedPath + '.tmp.' + Date.now();
+      const fd = origOpenSync.call(fs, tmpPath, 'w');
+      try {
+        origWriteSync.call(fs, fd, data);
+        try { origFsyncSync.call(fs, fd); } catch (e) {}
+      } finally {
+        try { origCloseSync.call(fs, fd); } catch (e) {}
+      }
+
+      // 3. 원자적(Atomic) 교체로 쓰기 도중 전원 차단 시에도 기존 세이브 보존
+      origRenameSync.call(fs, tmpPath, resolvedPath);
+      return;
+    } catch (err) {
+      console.warn('[mkmv-preload] Atomic save failed, falling back to direct write:', err);
+    }
+  }
+  return origWriteFileSync.call(fs, resolvedPath, data, options);
 };
 
 // 사용자 정의 옵션 (config.json) 로드
@@ -90,6 +143,17 @@ if (!process.mainModule) {
 } else {
   process.mainModule.filename = path.join(wwwPath, 'index.html');
 }
+
+// 캔버스 2D 픽셀 데이터 빈번한 읽기(getImageData) 시 CPU 성능 최적화 및 경고 방지
+try {
+  const origGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function(type, attributes) {
+    if (type === '2d') {
+      attributes = Object.assign({}, attributes, { willReadFrequently: true });
+    }
+    return origGetContext.call(this, type, attributes);
+  };
+} catch (e) {}
 
 // 2. NW.js 호환성 객체 (알만툴 MV 필수 모듈 Shim)
 const nwShim = {
@@ -671,7 +735,9 @@ function setupFastForward() {
     }
   }, true);
 
-  // SceneManager.updateMain 훅 (로직 갱신 배속)
+  let renderSkipCounter = 0;
+
+  // SceneManager.updateMain 훅 (로직 갱신 배속 + 프레임 스킵으로 CPU 과열 방지)
   const hookTimer = setInterval(() => {
     if (window.SceneManager && window.SceneManager.updateMain) {
       const origUpdateMain = window.SceneManager.updateMain;
@@ -689,12 +755,12 @@ function setupFastForward() {
         } else {
           const newTime = this._getTimeInMsWithoutMobileSafari ? this._getTimeInMsWithoutMobileSafari() : performance.now();
           let fTime = (newTime - this._currentTime) / 1000;
-          if (fTime > 0.25) fTime = 0.25;
+          if (fTime > 0.15) fTime = 0.15; // 지연 누적 상한 완화로 스파이크 방지
           this._currentTime = newTime;
           this._accumulator += fTime * speedMultiplier;
 
           let loops = 0;
-          const maxLoops = speedMultiplier * 4;
+          const maxLoops = Math.min(speedMultiplier * 2, 4); // 최대 루프 상한 4회로 타이트하게 제한
           while (this._accumulator >= this._deltaTime && loops < maxLoops) {
             this.updateInputData();
             this.changeScene();
@@ -702,15 +768,49 @@ function setupFastForward() {
             this._accumulator -= this._deltaTime;
             loops++;
           }
+          if (this._accumulator > this._deltaTime) {
+            this._accumulator = 0;
+          }
         }
-        this.renderScene();
+
+        // 배속 시 CPU 렌더링 부하/발열 절반 절감을 위한 프레임 스킵 (2프레임당 1회 렌더링)
+        renderSkipCounter = (renderSkipCounter + 1) % 2;
+        if (renderSkipCounter === 0) {
+          this.renderScene();
+        }
+
         this.requestUpdate();
       };
       clearInterval(hookTimer);
-      console.log(`[mkmv-preload] Fast forward engine hook installed (${speedMultiplier}x available on R3)`);
+      console.log(`[mkmv-preload] Fast forward engine hook installed (${speedMultiplier}x available on R3 with thermal frame-skip)`);
     }
   }, 50);
   setTimeout(() => clearInterval(hookTimer), 30000);
 }
 
 setupFastForward();
+
+// 슬립/화면 복귀 시 오디오 컨텍스트 자동 복구 (PulseAudio / WebAudio Sleep-Wake Recovery)
+function setupAudioRecovery() {
+  function resumeAudioContext() {
+    try {
+      if (window.WebAudio && window.WebAudio._context && window.WebAudio._context.state === 'suspended') {
+        window.WebAudio._context.resume().then(() => {
+          console.log('[mkmv-preload] WebAudio context resumed after sleep/focus');
+        }).catch((e) => {
+          console.warn('[mkmv-preload] WebAudio resume failed:', e);
+        });
+      }
+    } catch (e) {}
+  }
+
+  window.addEventListener('focus', resumeAudioContext);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      resumeAudioContext();
+    }
+  });
+  window.addEventListener('keydown', resumeAudioContext, { capture: true, passive: true });
+}
+
+setupAudioRecovery();

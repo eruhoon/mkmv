@@ -57,7 +57,7 @@ let opt = {
   showFps: false,
   fastForward: false,
   fastForwardSpeed: 2,
-  lowMemoryMode: false
+  lowMemoryMode: true
 };
 
 try {

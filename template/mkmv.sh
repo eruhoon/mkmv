@@ -102,6 +102,7 @@ for s in "$XDG_RUNTIME_DIR/pulse/native" "/run/user/0/pulse/native" "/run/user/1
     break
   fi
 done
+export PULSE_LATENCY_MSEC=60
 
 # Exports (런처 단계에서는 시스템 라이브러리만 유지하여 westonwrap 오작동 방지)
 export PORTMASTER_HOME="$controlfolder"
@@ -146,6 +147,7 @@ export LD_PRELOAD=""
 export LD_LIBRARY_PATH="$GAME_ROOT/lib:$GAME_ROOT:/usr/lib:/usr/lib/aarch64-linux-gnu:/lib:/lib/aarch64-linux-gnu"
 export ELECTRON_ENABLE_LOGGING=1
 export GTK_CSD=0
+export PULSE_LATENCY_MSEC=60
 
 # GDK Pixbuf 및 MIME 데이터베이스 설정
 export GDK_PIXBUF_MODULEDIR="$GAME_ROOT/lib"
