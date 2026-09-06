@@ -50,7 +50,11 @@ else
   GAME_ROOT="$(pwd)"
 fi
 export GAME_ROOT
-RUNNER="/tmp/mkmv_runner.sh"
+if command -v mktemp >/dev/null 2>&1; then
+  RUNNER="$(mktemp /tmp/mkmv_runner.XXXXXX.sh 2>/dev/null || echo "/tmp/mkmv_runner_${$}.sh")"
+else
+  RUNNER="/tmp/mkmv_runner_${$}.sh"
+fi
 
 cleanup() {
   echo "Cleaning up runtime environment..."
@@ -134,8 +138,7 @@ echo "WAYLAND_DISPLAY: $WAYLAND_DISPLAY"
 echo "XDG_RUNTIME_DIR: $XDG_RUNTIME_DIR"
 echo "PULSE_SERVER: $PULSE_SERVER"
 
-# 램디스크(/tmp)에 에뮬레이션스테이션에 노출되지 않는 고정 임시 실행기 생성 (SD 카드 목록 오염 방지)
-RUNNER="/tmp/mkmv_runner.sh"
+# 램디스크(/tmp)에 에뮬레이션스테이션에 노출되지 않는 임시 실행기 생성 (SD 카드 목록 오염 방지)
 cat << 'RUNNER_EOF' > "$RUNNER"
 #!/bin/bash
 GAME_ROOT="${GAME_ROOT:-/userdata/roms/ports/mkmv}"

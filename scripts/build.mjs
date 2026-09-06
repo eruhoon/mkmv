@@ -126,7 +126,11 @@ async function build() {
   fs.writeFileSync(path.join(wwwDir, '.gitkeep'), '');
   fs.writeFileSync(path.join(saveDir, '.gitkeep'), '');
 
-  console.log('[mkmv] Template files copied successfully.');
+  // Copy license files to dist app directory
+  const thirdPartyLicenseSrc = path.join(ROOT_DIR, 'THIRD_PARTY_LICENSES.md');
+  if (fs.existsSync(thirdPartyLicenseSrc)) {
+    fs.copyFileSync(thirdPartyLicenseSrc, path.join(DIST_APP_DIR, 'THIRD_PARTY_LICENSES.md'));
+  }
 
   // 6. Create PortMaster distribution zip
   console.log(`[mkmv] Creating distribution zip: dist/${ZIP_NAME}...`);
@@ -135,6 +139,13 @@ async function build() {
   const howToUseSrc = path.join(ROOT_DIR, 'HOW_TO_USE.md');
   if (fs.existsSync(howToUseSrc)) {
     distZip.addLocalFile(howToUseSrc);
+  }
+  const rootLicenseSrc = path.join(ROOT_DIR, 'LICENSE');
+  if (fs.existsSync(rootLicenseSrc)) {
+    distZip.addLocalFile(rootLicenseSrc);
+  }
+  if (fs.existsSync(thirdPartyLicenseSrc)) {
+    distZip.addLocalFile(thirdPartyLicenseSrc);
   }
   distZip.addLocalFolder(DIST_APP_DIR, 'mkmv');
 
