@@ -24,6 +24,7 @@ const origOpenSync = fs.openSync;
 const origWriteSync = fs.writeSync;
 const origFsyncSync = fs.fsyncSync;
 const origCloseSync = fs.closeSync;
+const origMkdirSync = fs.mkdirSync;
 
 // 1. RPG Maker MV & MZ 작업 디렉토리 및 메인 모듈 경로 자동 감지
 function detectGameDirectory(baseDir) {
@@ -123,11 +124,16 @@ fs.readFileSync = function(p, options) {
   }
   // 세이브 파일이 0바이트로 손상되었을 경우 직전 정상 백업(.bak) 자동 복구 (MV .rpgsave 및 MZ .rmmzsave 지원)
   if (typeof p === 'string' && (p.endsWith('.rpgsave') || p.endsWith('.rmmzsave')) && (!content || content.length === 0)) {
-    const bakFile = resolved + '.bak';
-    if (origExistsSync.call(fs, bakFile)) {
-      console.warn(`[mkmv-preload] Corrupted 0-byte save detected for ${p}, restoring from ${bakFile}`);
+    const saveDir = path.dirname(resolved);
+    const fileName = path.basename(resolved);
+    const hiddenBakFile = path.join(saveDir, '.bak', fileName + '.bak');
+    const legacyBakFile = resolved + '.bak';
+    const targetBak = origExistsSync.call(fs, hiddenBakFile) ? hiddenBakFile : (origExistsSync.call(fs, legacyBakFile) ? legacyBakFile : null);
+
+    if (targetBak) {
+      console.warn(`[mkmv-preload] Corrupted 0-byte save detected for ${p}, restoring from ${targetBak}`);
       try {
-        content = origReadFileSync.call(fs, bakFile, options);
+        content = origReadFileSync.call(fs, targetBak, options);
       } catch (e) {}
     }
   }
@@ -142,7 +148,7 @@ fs.readFile = function(p, ...args) {
   return origReadFile.call(fs, resolveCaseInsensitive(p, gameDir), ...args);
 };
 
-// 세이브 파일 파손 방지 (원자적 쓰기 + 물리 SD 카드 fsync 플러시 + 자동 .bak 백업)
+// 세이브 파일 파손 방지 (원자적 쓰기 + 물리 SD 카드 fsync 플러시 + .bak 서브폴더 자동 백업)
 fs.writeFileSync = function(p, data, options) {
   const resolvedPath = resolveCaseInsensitive(p, gameDir);
   const isSaveFile = typeof p === 'string' && (
@@ -154,10 +160,15 @@ fs.writeFileSync = function(p, data, options) {
 
   if (isSaveFile) {
     try {
-      // 1. 기존 정상 세이브를 .bak 백업으로 보존
+      // 1. 기존 정상 세이브를 .bak 숨김 서브폴더에 보존
       if (origExistsSync.call(fs, resolvedPath)) {
         try {
-          origCopyFileSync.call(fs, resolvedPath, resolvedPath + '.bak');
+          const saveDir = path.dirname(resolvedPath);
+          const bakDir = path.join(saveDir, '.bak');
+          if (!origExistsSync.call(fs, bakDir)) {
+            origMkdirSync.call(fs, bakDir, { recursive: true });
+          }
+          origCopyFileSync.call(fs, resolvedPath, path.join(bakDir, path.basename(resolvedPath) + '.bak'));
         } catch (e) {}
       }
 
