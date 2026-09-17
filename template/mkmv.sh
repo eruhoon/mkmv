@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # RPG Maker MV - PortMaster Official Universal Launcher Script
-# Version: 0.2.1
+# Version: 0.2.2
 # ==============================================================================
 
 # ⭐ [설정] 기본 게임 폴더명 (폴더명을 바꾸셨다면 아래 이름을 일치시켜 주세요)
@@ -56,8 +56,18 @@ else
   RUNNER="/tmp/mkmv_runner_${$}.sh"
 fi
 
+SWAP_ACTIVE=0
+
 cleanup() {
   echo "Cleaning up runtime environment..."
+  # ZRAM 스왑 비활성화
+  if [ "$SWAP_ACTIVE" -eq 1 ]; then
+    echo "Disabling ZRAM swap buffer..."
+    swapoff /dev/zram0 2>/dev/null
+    echo 1 > /sys/block/zram0/reset 2>/dev/null
+  fi
+  echo "=== SYSTEM MEMORY STATUS ==="
+  free -m 2>/dev/null
   echo "=== KERNEL DMESG (OOM / CRASH CHECK) ==="
   dmesg | tail -n 50 2>/dev/null
   rm -f "$RUNNER" 2>/dev/null
@@ -81,6 +91,35 @@ echo "Starting $GAME_CODE on PortMaster ($CFW_NAME)"
 echo "Directory: $GAME_ROOT"
 echo "Date: $(date)"
 echo "================================================="
+
+# 시스템 미사용 캐시 정리 (최대 가용 RAM 확보)
+sync
+echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
+echo "=== INITIAL MEMORY STATUS ==="
+free -m 2>/dev/null
+
+# ZRAM 압축 스왑(512MB) 점검 및 활성화 (exFAT 파일시스템 한계 극복 및 OOM 원천 방어)
+SWAP_ACTIVE=0
+if [ -z "$(swapon -s 2>/dev/null | grep -v Filename)" ]; then
+  echo "No active swap detected. Enabling ZRAM 512MB compressed swap..."
+  modprobe zram num_devices=1 2>/dev/null
+  if [ -e /sys/block/zram0/disksize ]; then
+    swapoff /dev/zram0 2>/dev/null
+    echo 1 > /sys/block/zram0/reset 2>/dev/null || true
+    echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+    echo 536870912 > /sys/block/zram0/disksize 2>/dev/null
+    mkswap /dev/zram0 >/dev/null 2>&1
+    if swapon -p 32767 /dev/zram0 2>/dev/null; then
+      echo "Successfully enabled 512MB ZRAM compressed swap buffer!"
+      SWAP_ACTIVE=1
+    fi
+  fi
+else
+  echo "Existing swap buffer active:"
+  swapon -s 2>/dev/null
+fi
+echo "=== ACTIVE MEMORY & SWAP STATUS ==="
+free -m 2>/dev/null
 
 # WebGL / SwiftShader 호환 라이브러리 보존
 chmod +x "$GAME_ROOT"/*.so 2>/dev/null
@@ -148,6 +187,11 @@ cd "$GAME_ROOT"
 unset LD_PRELOAD
 export LD_PRELOAD=""
 
+# glibc 메모리 단편화 및 과도한 아레나 풀 차단 (500MB -> 200MB대로 다이어트)
+export MALLOC_ARENA_MAX=1
+export MALLOC_TRIM_THRESHOLD_=65536
+export MALLOC_MMAP_THRESHOLD_=65536
+
 # Electron 전용 라이브러리 및 환경 설정 (외부 weston/crusty 경로를 완벽히 배제)
 export LD_LIBRARY_PATH="$GAME_ROOT/lib:$GAME_ROOT:/usr/lib:/usr/lib/aarch64-linux-gnu:/lib:/lib/aarch64-linux-gnu"
 export ELECTRON_ENABLE_LOGGING=1
@@ -161,15 +205,20 @@ export XDG_DATA_DIRS="$GAME_ROOT/share:/usr/share:$XDG_DATA_DIRS"
 
 FLAGS="--ozone-platform=wayland \
        --enable-features=UseOzonePlatform \
-       --disable-gpu-sandbox \
-       --ignore-gpu-blocklist \
-       --enable-gpu-rasterization \
-       --use-gl=egl \
+       --disable-gpu \
+       --disable-gpu-compositing \
+       --disable-gpu-rasterization \
        --disable-dev-shm-usage \
        --no-sandbox \
        --high-dpi-support=1 \
        --disable-features=TouchpadAndWheelScrollLatching \
-       --autoplay-policy=no-user-gesture-required"
+       --autoplay-policy=no-user-gesture-required \
+       --disable-background-networking \
+       --disable-breakpad \
+       --disable-component-update \
+       --disable-domain-reliability \
+       --disable-sync \
+       --disable-translate"
 
 chmod +x "$GAME_ROOT/electron" 2>/dev/null
 echo "Launching Electron: $GAME_ROOT/electron . $FLAGS"

@@ -1008,11 +1008,9 @@ function setupLowMemoryManager() {
       window.Scene_Base.prototype.terminate = function() {
         origTerminate.apply(this, arguments);
         if (window.gc) {
-          try {
-            setTimeout(() => {
-              if (window.gc) window.gc();
-            }, 100);
-          } catch (e) {}
+          setTimeout(() => {
+            try { if (window.gc) window.gc(); } catch (e) {}
+          }, 100);
         }
       };
       return true;
@@ -1028,7 +1026,7 @@ function setupLowMemoryManager() {
         origOnMapLoaded.apply(this, arguments);
         if (window.gc) {
           setTimeout(() => {
-            if (window.gc) window.gc();
+            try { if (window.gc) window.gc(); } catch (e) {}
           }, 150);
         }
       };
@@ -1051,10 +1049,20 @@ function setupLowMemoryManager() {
   }, 50);
   setTimeout(() => clearInterval(memTimer), 20000);
 
-  // 4. 배속 플레이(Fast-Forward) 시 메모리 누적 방지: 30초마다 유휴 GC
+  // 4. 배속 플레이(Fast-Forward) 시 메모리 누적 방지: 30초마다 유휴 GC 및 메모리 로깅
+  let logCounter = 0;
   setInterval(() => {
     try {
       if (window.gc) window.gc();
+
+      logCounter++;
+      if (logCounter % 2 === 0 && process && process.memoryUsage) {
+        const mem = process.memoryUsage();
+        const rssMB = Math.round(mem.rss / 1024 / 1024);
+        const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
+        const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
+        console.log(`[mkmv-mem] RSS: ${rssMB}MB | Heap: ${heapUsedMB}/${heapTotalMB}MB`);
+      }
     } catch (e) {}
   }, 30000);
 }

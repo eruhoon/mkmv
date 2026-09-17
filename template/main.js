@@ -95,7 +95,7 @@ try {
 } catch (e) {}
 
 // 저사양 1GB 기기용 메모리 최적화 및 V8 힙 제한 (OOM 킬러 원천 방지)
-const maxHeap = Number(opt.maxOldSpaceSize) || (opt.lowMemoryMode ? 256 : 512);
+const maxHeap = Number(opt.maxOldSpaceSize) || (opt.lowMemoryMode ? 128 : 384);
 console.log(`[mkmv] Memory configuration: maxOldSpaceSize=${maxHeap}MB, lowMemoryMode=${opt.lowMemoryMode !== false}`);
 app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${maxHeap} --expose-gc`);
 
@@ -105,6 +105,14 @@ if (opt.lowMemoryMode) {
   app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
   app.commandLine.appendSwitch('disk-cache-size', '1048576');
   app.commandLine.appendSwitch('media-cache-size', '1048576');
+  // 백그라운드 태스크 및 네이티브 메모리 다이어트
+  app.commandLine.appendSwitch('disable-background-networking');
+  app.commandLine.appendSwitch('disable-breakpad');
+  app.commandLine.appendSwitch('disable-component-update');
+  app.commandLine.appendSwitch('disable-domain-reliability');
+  app.commandLine.appendSwitch('disable-sync');
+  app.commandLine.appendSwitch('disable-translate');
+  app.commandLine.appendSwitch('disable-features', 'AudioServiceSandbox,MediaRouter,PaintHolding');
 }
 
 
