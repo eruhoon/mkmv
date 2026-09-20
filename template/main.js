@@ -7,19 +7,61 @@ const dirCache = new Map();
 
 function getCaseInsensitiveChild(parentDir, childName) {
   let cache = dirCache.get(parentDir);
+  let entries;
   if (!cache) {
     try {
-      const entries = fs.readdirSync(parentDir);
+      entries = fs.readdirSync(parentDir);
       cache = new Map();
       for (const entry of entries) {
         cache.set(entry.toLowerCase(), entry);
+        try { cache.set(entry.normalize('NFC').toLowerCase(), entry); } catch (e) {}
+        try { cache.set(entry.normalize('NFD').toLowerCase(), entry); } catch (e) {}
       }
       dirCache.set(parentDir, cache);
+      dirCache.set(parentDir + ':entries', entries);
     } catch (e) {
       return null;
     }
+  } else {
+    entries = dirCache.get(parentDir + ':entries') || [];
   }
-  return cache.get(childName.toLowerCase()) || null;
+
+  const lowerChild = (childName || '').toLowerCase();
+  let match = cache.get(lowerChild);
+  if (!match) {
+    try { match = cache.get((childName || '').normalize('NFC').toLowerCase()); } catch (e) {}
+  }
+  if (!match) {
+    try { match = cache.get((childName || '').normalize('NFD').toLowerCase()); } catch (e) {}
+  }
+
+  // 1. 특수문자(일본어 점, 반각/전각 점, 언더바, 대시 등) 무시 정규화 비교
+  if (!match && entries && entries.length > 0) {
+    const stripPunct = s => s.toLowerCase().replace(/[\s・･·•\-_.\u30FB\uFF65\u00B7\u2022]/g, '');
+    const cleanChild = stripPunct(childName || '');
+    for (const entry of entries) {
+      if (stripPunct(entry) === cleanChild) {
+        match = entry;
+        break;
+      }
+    }
+  }
+
+  // 2. 만약 여전히 없다면, 동일 확장자 내에서 알파벳 키워드 부분 일치 검사 (예: Skip.png, Auto.png)
+  if (!match && entries && entries.length > 0) {
+    const ext = path.extname(childName || '').toLowerCase();
+    const base = path.basename(childName || '', ext).toLowerCase();
+    const alphaMatch = base.match(/[a-z]{3,}/i);
+    if (alphaMatch) {
+      const keyword = alphaMatch[0].toLowerCase();
+      const candidates = entries.filter(e => e.toLowerCase().endsWith(ext) && e.toLowerCase().includes(keyword));
+      if (candidates.length === 1) {
+        match = candidates[0];
+      }
+    }
+  }
+
+  return match || null;
 }
 
 function resolveCaseInsensitive(targetPath, baseDir = __dirname) {
@@ -27,11 +69,35 @@ function resolveCaseInsensitive(targetPath, baseDir = __dirname) {
   targetPath = targetPath.replace(/\uFEFF/g, '');
   if (fs.existsSync(targetPath)) return targetPath;
   const normalizedTarget = path.resolve(targetPath);
-  const normalizedBase = path.resolve(baseDir);
 
-  if (normalizedTarget.startsWith(normalizedBase)) {
+  // 1. 단일 파일 레벨 빠른 대소문자/유니코드 매칭 (부모 폴더가 존재하는 경우 즉시 복구)
+  const parentDir = path.dirname(normalizedTarget);
+  if (fs.existsSync(parentDir)) {
+    const filename = path.basename(normalizedTarget);
+    const match = getCaseInsensitiveChild(parentDir, filename);
+    if (match) return path.join(parentDir, match);
+  }
+
+  // 2. 심볼릭 링크(/roms <-> /storage/roms) 및 다단계 경로 계층 탐색
+  let realBase = baseDir;
+  try { realBase = fs.realpathSync(baseDir); } catch (e) {}
+  const normalizedBase = path.resolve(realBase);
+
+  let compareTarget = normalizedTarget;
+  try {
+    let p = parentDir;
+    while (p && p !== path.dirname(p)) {
+      if (fs.existsSync(p)) {
+        compareTarget = path.join(fs.realpathSync(p), path.relative(p, normalizedTarget));
+        break;
+      }
+      p = path.dirname(p);
+    }
+  } catch (e) {}
+
+  if (compareTarget.startsWith(normalizedBase)) {
     let current = normalizedBase;
-    const rel = path.relative(normalizedBase, normalizedTarget);
+    const rel = path.relative(normalizedBase, compareTarget);
     const relParts = rel.split(/[/\\]+/).filter(Boolean);
     for (const part of relParts) {
       const match = getCaseInsensitiveChild(current, part);
@@ -239,14 +305,15 @@ app.whenReady().then(() => {
   // Linux ext4 대소문자 불일치 404 방지: file:// 프로토콜 가로채기
   protocol.interceptFileProtocol('file', (request, callback) => {
     try {
-      let pathname = decodeURIComponent(new URL(request.url).pathname);
-      pathname = pathname.replace(/\uFEFF/g, '');
+      let rawPath = new URL(request.url).pathname;
+      let pathname = decodeURIComponent(rawPath).replace(/\uFEFF/g, '');
       if (process.platform === 'win32' && pathname.startsWith('/') && pathname.length > 2 && pathname[2] === ':') {
         pathname = pathname.slice(1);
       }
-      const resolved = resolveCaseInsensitive(pathname, __dirname);
+      const resolved = resolveCaseInsensitive(pathname, gameDir);
       callback({ path: resolved });
     } catch (e) {
+      console.error(`[mkmv-protocol-error] URL: ${request.url}`, e);
       callback({ error: -6 }); // net::ERR_FILE_NOT_FOUND
     }
   });

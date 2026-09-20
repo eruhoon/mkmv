@@ -53,19 +53,80 @@ const dirCache = new Map();
 
 function getCaseInsensitiveChild(parentDir, childName) {
   let cache = dirCache.get(parentDir);
+  let entries;
   if (!cache) {
     try {
-      const entries = origReaddirSync.call(fs, parentDir);
+      entries = origReaddirSync.call(fs, parentDir);
       cache = new Map();
       for (const entry of entries) {
         cache.set(entry.toLowerCase(), entry);
+        try { cache.set(entry.normalize('NFC').toLowerCase(), entry); } catch (e) {}
+        try { cache.set(entry.normalize('NFD').toLowerCase(), entry); } catch (e) {}
       }
       dirCache.set(parentDir, cache);
+      dirCache.set(parentDir + ':entries', entries);
     } catch (e) {
       return null;
     }
+  } else {
+    entries = dirCache.get(parentDir + ':entries') || [];
   }
-  return cache.get(childName.toLowerCase()) || null;
+
+  const lowerChild = (childName || '').toLowerCase();
+  let match = cache.get(lowerChild);
+  if (!match) {
+    try { match = cache.get((childName || '').normalize('NFC').toLowerCase()); } catch (e) {}
+  }
+  if (!match) {
+    try { match = cache.get((childName || '').normalize('NFD').toLowerCase()); } catch (e) {}
+  }
+
+  // 1. 특수문자(일본어 점, 반각/전각 점, 언더바, 대시 등) 무시 정규화 비교
+  if (!match && entries && entries.length > 0) {
+    const stripPunct = s => s.toLowerCase().replace(/[\s・･·•\-_.\u30FB\uFF65\u00B7\u2022]/g, '');
+    const cleanChild = stripPunct(childName || '');
+    for (const entry of entries) {
+      if (stripPunct(entry) === cleanChild) {
+        match = entry;
+        break;
+      }
+    }
+  }
+
+  // 2. 만약 여전히 없다면, 동일 확장자 내에서 알파벳 키워드 부분 일치 검사 (예: Skip.png, Auto.png)
+  if (!match && entries && entries.length > 0) {
+    const ext = path.extname(childName || '').toLowerCase();
+    const base = path.basename(childName || '', ext).toLowerCase();
+    const alphaMatch = base.match(/[a-z]{3,}/i);
+    if (alphaMatch) {
+      const keyword = alphaMatch[0].toLowerCase();
+      const candidates = entries.filter(e => e.toLowerCase().endsWith(ext) && e.toLowerCase().includes(keyword));
+      if (candidates.length === 1) {
+        match = candidates[0];
+      }
+    }
+  }
+
+  // 3. 만약 확장자가 다른 동일 이름의 미디어 파일이 존재하는 경우 (.ogg <-> .m4a, .png <-> .rpgmvp / .png_)
+  if (!match && entries && entries.length > 0) {
+    const ext = path.extname(childName || '').toLowerCase();
+    const base = path.basename(childName || '', ext).toLowerCase();
+    let altExts = [];
+    if (ext === '.ogg') altExts = ['.m4a', '.rpgmvo', '.ogg_'];
+    else if (ext === '.m4a') altExts = ['.ogg', '.rpgmvm', '.m4a_'];
+    else if (ext === '.png') altExts = ['.rpgmvp', '.png_'];
+
+    for (const altExt of altExts) {
+      const altChild = (base + altExt).toLowerCase();
+      const found = cache.get(altChild);
+      if (found) {
+        match = found;
+        break;
+      }
+    }
+  }
+
+  return match || null;
 }
 
 function resolveCaseInsensitive(targetPath, baseDir = gameDir) {
@@ -73,11 +134,35 @@ function resolveCaseInsensitive(targetPath, baseDir = gameDir) {
   targetPath = targetPath.replace(/\uFEFF/g, '');
   if (origExistsSync.call(fs, targetPath)) return targetPath;
   const normalizedTarget = path.resolve(targetPath);
-  const normalizedBase = path.resolve(baseDir);
 
-  if (normalizedTarget.startsWith(normalizedBase)) {
+  // 1. 단일 파일 레벨 빠른 대소문자/유니코드 매칭 (부모 폴더가 존재하는 경우 즉시 복구)
+  const parentDir = path.dirname(normalizedTarget);
+  if (origExistsSync.call(fs, parentDir)) {
+    const filename = path.basename(normalizedTarget);
+    const match = getCaseInsensitiveChild(parentDir, filename);
+    if (match) return path.join(parentDir, match);
+  }
+
+  // 2. 심볼릭 링크(/roms <-> /storage/roms) 및 다단계 경로 계층 탐색
+  let realBase = baseDir;
+  try { realBase = fs.realpathSync(baseDir); } catch (e) {}
+  const normalizedBase = path.resolve(realBase);
+
+  let compareTarget = normalizedTarget;
+  try {
+    let p = parentDir;
+    while (p && p !== path.dirname(p)) {
+      if (origExistsSync.call(fs, p)) {
+        compareTarget = path.join(fs.realpathSync(p), path.relative(p, normalizedTarget));
+        break;
+      }
+      p = path.dirname(p);
+    }
+  } catch (e) {}
+
+  if (compareTarget.startsWith(normalizedBase)) {
     let current = normalizedBase;
-    const rel = path.relative(normalizedBase, normalizedTarget);
+    const rel = path.relative(normalizedBase, compareTarget);
     const relParts = rel.split(/[/\\]+/).filter(Boolean);
     for (const part of relParts) {
       const match = getCaseInsensitiveChild(current, part);
@@ -88,6 +173,140 @@ function resolveCaseInsensitive(targetPath, baseDir = gameDir) {
   }
   return targetPath;
 }
+
+// 게임 내 URL (상대 경로, 퍼센트 인코딩, file:// 프로토콜 등)을 절대 디스크 경로로 안전 정규화
+function resolveGamePath(inputUrl) {
+  if (!inputUrl || typeof inputUrl !== 'string') return null;
+  let target = inputUrl.replace(/\uFEFF/g, '');
+  if (target.startsWith('file://')) {
+    try {
+      target = new URL(target).pathname;
+    } catch (e) {
+      target = target.replace(/^file:\/\//, '');
+    }
+  }
+  try {
+    target = decodeURIComponent(target);
+  } catch (e) {}
+
+  if (process.platform === 'win32' && target.startsWith('/') && target.length > 2 && target[2] === ':') {
+    target = target.slice(1);
+  }
+
+  return resolveCaseInsensitive(target, gameDir);
+}
+
+// Chromium C++ FileURLLoaderFactory 버그 대응: 유니코드/특수문자 파일의 XMLHttpRequest 및 fetch 직접 복구
+function setupUniversalXhrRecovery() {
+  if (typeof XMLHttpRequest === 'undefined') return;
+  const origOpen = XMLHttpRequest.prototype.open;
+  const origSend = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+    this._mkmvMethod = (method || 'GET').toUpperCase();
+    this._mkmvUrl = url;
+    return origOpen.apply(this, arguments);
+  };
+
+  XMLHttpRequest.prototype.send = function(body) {
+    const url = this._mkmvUrl;
+    const method = this._mkmvMethod;
+
+    if (method === 'GET' && typeof url === 'string' && !url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+      const resolved = resolveGamePath(url);
+      const exists = resolved && origExistsSync.call(fs, resolved);
+      const hasSpecial = /[^\x00-\x7F]/.test(url) || (resolved && /[^\x00-\x7F]/.test(resolved)) || url.includes('%');
+
+      // 디스크에 실재하는 파일에 대해 Chromium C++ 로더가 유니코드/특수문자 파싱 실패(net::ERR_FILE_NOT_FOUND) 시 즉시 주입
+      if (hasSpecial && exists) {
+        const self = this;
+        setTimeout(() => {
+          try {
+            const isArrayBuffer = self.responseType === 'arraybuffer';
+            const isJson = self.responseType === 'json';
+            const isBlob = self.responseType === 'blob';
+
+            let responseData;
+            let responseText = '';
+
+            if (isArrayBuffer) {
+              const buf = origReadFileSync.call(fs, resolved);
+              responseData = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+            } else if (isBlob) {
+              const buf = origReadFileSync.call(fs, resolved);
+              responseData = new Blob([buf]);
+            } else {
+              responseText = origReadFileSync.call(fs, resolved, 'utf8').replace(/^\uFEFF/, '');
+              if (isJson) {
+                try {
+                  responseData = JSON.parse(responseText);
+                } catch (e) {
+                  responseData = null;
+                }
+              } else {
+                responseData = responseText;
+              }
+            }
+
+            Object.defineProperty(self, 'readyState', { value: 4, writable: false, configurable: true });
+            Object.defineProperty(self, 'status', { value: 200, writable: false, configurable: true });
+            Object.defineProperty(self, 'statusText', { value: 'OK', writable: false, configurable: true });
+            Object.defineProperty(self, 'response', { value: responseData, writable: false, configurable: true });
+            if (!isArrayBuffer && !isBlob) {
+              Object.defineProperty(self, 'responseText', { value: responseText, writable: false, configurable: true });
+            }
+
+            if (typeof self.onreadystatechange === 'function') {
+              self.onreadystatechange();
+            }
+            self.dispatchEvent(new Event('readystatechange'));
+
+            if (typeof self.onload === 'function') {
+              self.onload();
+            }
+            self.dispatchEvent(new ProgressEvent('load'));
+
+            if (typeof self.onloadend === 'function') {
+              self.onloadend();
+            }
+            self.dispatchEvent(new ProgressEvent('loadend'));
+          } catch (err) {
+            console.error('[mkmv-preload] XHR direct fulfill error:', err);
+            if (typeof self.onerror === 'function') {
+              self.onerror();
+            }
+            self.dispatchEvent(new ProgressEvent('error'));
+          }
+        }, 0);
+        return;
+      }
+    }
+
+    return origSend.apply(this, arguments);
+  };
+
+  if (typeof window !== 'undefined' && window.fetch) {
+    const origFetch = window.fetch;
+    window.fetch = function(input, init) {
+      const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+      if (url && !url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+        const resolved = resolveGamePath(url);
+        const exists = resolved && origExistsSync.call(fs, resolved);
+        const hasSpecial = /[^\x00-\x7F]/.test(url) || (resolved && /[^\x00-\x7F]/.test(resolved)) || url.includes('%');
+        if (hasSpecial && exists) {
+          try {
+            const buf = origReadFileSync.call(fs, resolved);
+            return Promise.resolve(new Response(buf, { status: 200, statusText: 'OK' }));
+          } catch (e) {}
+        }
+      }
+      return origFetch.apply(this, arguments);
+    };
+  }
+
+  console.log('[mkmv-preload] Universal XHR & Fetch Unicode recovery installed');
+}
+setupUniversalXhrRecovery();
 
 fs.existsSync = function(p) {
   try {
@@ -977,7 +1196,211 @@ function setupAudioRecovery() {
 
 setupAudioRecovery();
 
-// 10. 저사양 1GB 기기용 메모리 안정화 및 가비지 컬렉션(GC) 관리
+// 10. 리소스(이미지/사운드 등) 로딩 실패 시 log.txt에 파일명 및 에러 상세 기록
+function setupResourceErrorLogger() {
+  const hookTimer = setInterval(() => {
+    if (window.Graphics && typeof window.Graphics.printLoadingError === 'function') {
+      if (!window.Graphics._mkmvHooked) {
+        window.Graphics._mkmvHooked = true;
+        const origPrintLoadingError = window.Graphics.printLoadingError;
+        window.Graphics.printLoadingError = function(url) {
+          console.error(`[mkmv-resource-error] Failed to load resource: ${url}`);
+          try {
+            console.error(`[mkmv-resource-error] Target path: ${path.join(gameDir, url)}`);
+          } catch (e) {}
+          return origPrintLoadingError.apply(this, arguments);
+        };
+        clearInterval(hookTimer);
+        console.log('[mkmv-preload] Resource loading error logger installed successfully');
+      }
+    }
+  }, 50);
+  setTimeout(() => clearInterval(hookTimer), 30000);
+}
+
+setupResourceErrorLogger();
+
+// 11. 알만툴 WebAudio & Html5Audio 오디오 리소스 유니코드 직접 복구
+function setupUniversalAudioRecovery() {
+  const hookTimer = setInterval(() => {
+    let webAudioHooked = false;
+    let html5AudioHooked = false;
+
+    if (window.WebAudio && window.WebAudio.prototype && window.WebAudio.prototype._load) {
+      if (!window.WebAudio.prototype._mkmvAudioHooked) {
+        window.WebAudio.prototype._mkmvAudioHooked = true;
+        const origWebAudioLoad = window.WebAudio.prototype._load;
+
+        window.WebAudio.prototype._load = function(url) {
+          const resolved = resolveGamePath(url);
+          const exists = resolved && origExistsSync.call(fs, resolved);
+          const hasSpecial = /[^\x00-\x7F]/.test(url || '') || (resolved && /[^\x00-\x7F]/.test(resolved)) || (url && url.includes('%'));
+
+          if (hasSpecial && exists && window.WebAudio._context) {
+            try {
+              console.log(`[mkmv-preload] Direct loading Unicode WebAudio via Node.js fs: ${url}`);
+              const buf = origReadFileSync.call(fs, resolved);
+              const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+              this._onXhrLoad({ status: 200, response: arrayBuffer });
+              return;
+            } catch (e) {
+              console.error('[mkmv-preload] Direct WebAudio load error:', e);
+            }
+          }
+          return origWebAudioLoad.apply(this, arguments);
+        };
+        webAudioHooked = true;
+      }
+    }
+
+    if (window.Html5Audio && typeof window.Html5Audio._load === 'function') {
+      if (!window.Html5Audio._mkmvAudioHooked) {
+        window.Html5Audio._mkmvAudioHooked = true;
+        const origHtml5Load = window.Html5Audio._load;
+
+        window.Html5Audio._load = function(url) {
+          const resolved = resolveGamePath(url);
+          const exists = resolved && origExistsSync.call(fs, resolved);
+          const hasSpecial = /[^\x00-\x7F]/.test(url || '') || (resolved && /[^\x00-\x7F]/.test(resolved)) || (url && url.includes('%'));
+
+          if (hasSpecial && exists && this._audioElement) {
+            try {
+              console.log(`[mkmv-preload] Direct loading Unicode Html5Audio via Blob: ${url}`);
+              const buf = origReadFileSync.call(fs, resolved);
+              const ext = path.extname(resolved).toLowerCase();
+              const mime = ext === '.ogg' ? 'audio/ogg' : (ext === '.m4a' ? 'audio/mp4' : 'audio/mpeg');
+              const blob = new Blob([buf], { type: mime });
+              this._isLoading = true;
+              this._audioElement.src = URL.createObjectURL(blob);
+              this._audioElement.load();
+              return;
+            } catch (e) {
+              console.error('[mkmv-preload] Direct Html5Audio load error:', e);
+            }
+          }
+          return origHtml5Load.apply(this, arguments);
+        };
+        html5AudioHooked = true;
+      }
+    }
+
+    if (webAudioHooked || (window.WebAudio && window.WebAudio.prototype && window.WebAudio.prototype._mkmvAudioHooked)) {
+      clearInterval(hookTimer);
+      console.log('[mkmv-preload] Universal Audio recovery hooks installed successfully');
+    }
+  }, 50);
+  setTimeout(() => clearInterval(hookTimer), 30000);
+}
+
+setupUniversalAudioRecovery();
+
+// 12. 디스크에 실재하지만 Chromium file:// 프로토콜에서 실패하는 유니코드/특수문자 이미지 Node.js 직접 복구
+function setupUnicodeImageRecovery() {
+  const hookTimer = setInterval(() => {
+    if (window.Bitmap && window.Bitmap.prototype && window.Bitmap.prototype._requestImage) {
+      if (!window.Bitmap.prototype._mkmvUnicodeHooked) {
+        window.Bitmap.prototype._mkmvUnicodeHooked = true;
+        const origRequestImage = window.Bitmap.prototype._requestImage;
+        window.Bitmap.prototype._requestImage = function(url) {
+          const targetUrl = url || '';
+          const resolved = resolveGamePath(targetUrl);
+          const exists = resolved && origExistsSync.call(fs, resolved);
+          const hasSpecial = /[^\x00-\x7F]/.test(targetUrl) || (resolved && /[^\x00-\x7F]/.test(resolved)) || targetUrl.includes('%');
+
+          // 유니코드/특수문자 이미지가 디스크에 실재하는 경우 Chromium C++의 에러 이벤트를 기다리지 않고 즉시 data URI로 주입
+          if (hasSpecial && exists) {
+            try {
+              console.log(`[mkmv-preload] Direct loading Unicode image via Node.js fs: ${targetUrl}`);
+              const buf = origReadFileSync.call(fs, resolved);
+              const ext = path.extname(resolved).toLowerCase().replace('.', '');
+              const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
+              const dataUrl = `data:${mime};base64,` + buf.toString('base64');
+              return origRequestImage.call(this, dataUrl);
+            } catch (e) {
+              console.error('[mkmv-preload] Direct image load error:', e);
+            }
+          }
+
+          origRequestImage.apply(this, arguments);
+
+          if (this._image) {
+            const originalErrorListener = this._errorListener;
+            const self = this;
+
+            this._image.removeEventListener('error', originalErrorListener);
+            this._image.addEventListener('error', function onImageError(e) {
+              try {
+                const retryUrl = url || self._url || '';
+                const retryResolved = resolveGamePath(retryUrl);
+                if (retryResolved && origExistsSync.call(fs, retryResolved)) {
+                  console.log(`[mkmv-preload] Auto-recovering Unicode image via Node.js fs: ${retryUrl}`);
+                  const buf = origReadFileSync.call(fs, retryResolved);
+                  const ext = path.extname(retryResolved).toLowerCase().replace('.', '');
+                  const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
+                  const targetImg = self._image || this || (e && e.target);
+                  if (targetImg) {
+                    targetImg.src = `data:${mime};base64,` + buf.toString('base64');
+                    return;
+                  }
+                }
+              } catch (err) {
+                console.error('[mkmv-preload] Image recovery failed:', err);
+              }
+
+              // 디스크에 진짜 파일이 없는 경우: 원래 알만툴 에러 핸들러 호출 (더미 주입 없이 정상 에러 리포트)
+              if (originalErrorListener) {
+                originalErrorListener.call(self._image || this, e);
+              }
+            });
+          }
+        };
+        clearInterval(hookTimer);
+        console.log('[mkmv-preload] Unicode image recovery handler installed successfully');
+      }
+    }
+  }, 50);
+  setTimeout(() => clearInterval(hookTimer), 30000);
+}
+
+setupUnicodeImageRecovery();
+
+// 13. 알만툴 DataManager JSON 데이터 파일 유니코드 복구
+function setupDataManagerRecovery() {
+  const hookTimer = setInterval(() => {
+    if (window.DataManager && typeof window.DataManager.loadDataFile === 'function') {
+      if (!window.DataManager._mkmvDataHooked) {
+        window.DataManager._mkmvDataHooked = true;
+        const origLoadDataFile = window.DataManager.loadDataFile;
+        window.DataManager.loadDataFile = function(name, src) {
+          const dataUrl = 'data/' + src;
+          const resolved = resolveGamePath(dataUrl);
+          const exists = resolved && origExistsSync.call(fs, resolved);
+          const hasSpecial = /[^\x00-\x7F]/.test(src || '') || (resolved && /[^\x00-\x7F]/.test(resolved));
+
+          if (hasSpecial && exists) {
+            try {
+              console.log(`[mkmv-preload] Direct loading Unicode DataFile via Node.js fs: ${src}`);
+              const content = origReadFileSync.call(fs, resolved, 'utf8');
+              window[name] = JSON.parse(content.replace(/^\uFEFF/, ''));
+              DataManager.onLoad(window[name]);
+              return;
+            } catch (e) {
+              console.error('[mkmv-preload] Direct DataFile load error:', e);
+            }
+          }
+          return origLoadDataFile.apply(this, arguments);
+        };
+        clearInterval(hookTimer);
+        console.log('[mkmv-preload] DataManager unicode recovery hook installed successfully');
+      }
+    }
+  }, 50);
+  setTimeout(() => clearInterval(hookTimer), 30000);
+}
+
+setupDataManagerRecovery();
+
+// 12. 저사양 1GB 기기용 메모리 안정화 및 가비지 컬렉션(GC) 관리
 function setupLowMemoryManager() {
   if (userOpt.lowMemoryMode === false) return;
 
