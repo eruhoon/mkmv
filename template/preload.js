@@ -187,6 +187,7 @@ function resolveCaseInsensitive(targetPath, baseDir = gameDir) {
 // 게임 내 URL (상대 경로, 퍼센트 인코딩, file:// 프로토콜 등)을 절대 디스크 경로로 안전 정규화
 function resolveGamePath(inputUrl) {
   if (!inputUrl || typeof inputUrl !== 'string') return null;
+  if (inputUrl.startsWith('data:') || inputUrl.startsWith('blob:')) return null;
   let target = inputUrl.replace(/\uFEFF/g, '');
   if (target.startsWith('file://')) {
     try {
@@ -1549,17 +1550,26 @@ function setupUniversalAudioRecovery() {
         const origWebAudioLoad = window.WebAudio.prototype._load;
 
         window.WebAudio.prototype._load = function(url) {
+          if (!url || typeof url !== 'string' || url.startsWith('data:') || url.startsWith('blob:')) {
+            return origWebAudioLoad.apply(this, arguments);
+          }
+
+          const isEncryptedAudio = window.Decrypter && window.Decrypter.hasEncryptedAudio;
           const resolved = resolveGamePath(url);
           const exists = resolved && origExistsSync.call(fs, resolved);
+          const isEncryptedExt = resolved && (resolved.endsWith('.rpgmvo') || resolved.endsWith('.rpgmvm') || resolved.endsWith('.ogg_') || resolved.endsWith('.m4a_'));
           const hasSpecial = /[^\x00-\x7F]/.test(url || '') || (resolved && /[^\x00-\x7F]/.test(resolved)) || (url && url.includes('%'));
 
-          if (hasSpecial && exists && window.WebAudio._context) {
+          if (!isEncryptedAudio && !isEncryptedExt && hasSpecial && exists && window.WebAudio._context) {
             try {
-              console.log(`[mkmv-preload] Direct loading Unicode WebAudio via Node.js fs: ${url}`);
               const buf = origReadFileSync.call(fs, resolved);
-              const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-              this._onXhrLoad({ status: 200, response: arrayBuffer });
-              return;
+              const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
+              if (!isRpgmvHeader) {
+                console.log(`[mkmv-preload] Direct loading Unicode WebAudio via Node.js fs: ${url}`);
+                const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+                this._onXhrLoad({ status: 200, response: arrayBuffer });
+                return;
+              }
             } catch (e) {
               console.error('[mkmv-preload] Direct WebAudio load error:', e);
             }
@@ -1576,21 +1586,30 @@ function setupUniversalAudioRecovery() {
         const origHtml5Load = window.Html5Audio._load;
 
         window.Html5Audio._load = function(url) {
+          if (!url || typeof url !== 'string' || url.startsWith('data:') || url.startsWith('blob:')) {
+            return origHtml5Load.apply(this, arguments);
+          }
+
+          const isEncryptedAudio = window.Decrypter && window.Decrypter.hasEncryptedAudio;
           const resolved = resolveGamePath(url);
           const exists = resolved && origExistsSync.call(fs, resolved);
+          const isEncryptedExt = resolved && (resolved.endsWith('.rpgmvo') || resolved.endsWith('.rpgmvm') || resolved.endsWith('.ogg_') || resolved.endsWith('.m4a_'));
           const hasSpecial = /[^\x00-\x7F]/.test(url || '') || (resolved && /[^\x00-\x7F]/.test(resolved)) || (url && url.includes('%'));
 
-          if (hasSpecial && exists && this._audioElement) {
+          if (!isEncryptedAudio && !isEncryptedExt && hasSpecial && exists && this._audioElement) {
             try {
-              console.log(`[mkmv-preload] Direct loading Unicode Html5Audio via Blob: ${url}`);
               const buf = origReadFileSync.call(fs, resolved);
-              const ext = path.extname(resolved).toLowerCase();
-              const mime = ext === '.ogg' ? 'audio/ogg' : (ext === '.m4a' ? 'audio/mp4' : 'audio/mpeg');
-              const blob = new Blob([buf], { type: mime });
-              this._isLoading = true;
-              this._audioElement.src = URL.createObjectURL(blob);
-              this._audioElement.load();
-              return;
+              const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
+              if (!isRpgmvHeader) {
+                console.log(`[mkmv-preload] Direct loading Unicode Html5Audio via Blob: ${url}`);
+                const ext = path.extname(resolved).toLowerCase();
+                const mime = ext === '.ogg' ? 'audio/ogg' : (ext === '.m4a' ? 'audio/mp4' : 'audio/mpeg');
+                const blob = new Blob([buf], { type: mime });
+                this._isLoading = true;
+                this._audioElement.src = URL.createObjectURL(blob);
+                this._audioElement.load();
+                return;
+              }
             } catch (e) {
               console.error('[mkmv-preload] Direct Html5Audio load error:', e);
             }
@@ -1620,19 +1639,32 @@ function setupUnicodeImageRecovery() {
         const origRequestImage = window.Bitmap.prototype._requestImage;
         window.Bitmap.prototype._requestImage = function(url) {
           const targetUrl = url || '';
+
+          // 1. Data URI 또는 Blob URL은 이미 디코딩/인메모리 처리된 이미지이므로 즉시 바이패스
+          if (targetUrl.startsWith('data:') || targetUrl.startsWith('blob:')) {
+            return origRequestImage.apply(this, arguments);
+          }
+
+          // 2. 알만툴 MV 자체 리소스 암호화가 활성화된 경우 (Decrypter.decryptImg XHR 루틴으로 위임)
+          const isEncryptedGame = window.Decrypter && window.Decrypter.hasEncryptedImages && !window.Decrypter.checkImgIgnore(targetUrl);
+
           const resolved = resolveGamePath(targetUrl);
           const exists = resolved && origExistsSync.call(fs, resolved);
+          const isEncryptedExt = resolved && (resolved.endsWith('.rpgmvp') || resolved.endsWith('.png_'));
           const hasSpecial = /[^\x00-\x7F]/.test(targetUrl) || (resolved && /[^\x00-\x7F]/.test(resolved)) || targetUrl.includes('%');
 
-          // 유니코드/특수문자 이미지가 디스크에 실재하는 경우 Chromium C++의 에러 이벤트를 기다리지 않고 즉시 data URI로 주입
-          if (hasSpecial && exists) {
+          // 암호화되지 않은 순수 유니코드/특수문자 이미지 파일에 한해 Node.js fs로 즉시 data URI 주입
+          if (!isEncryptedGame && !isEncryptedExt && hasSpecial && exists) {
             try {
-              console.log(`[mkmv-preload] Direct loading Unicode image via Node.js fs: ${targetUrl}`);
               const buf = origReadFileSync.call(fs, resolved);
-              const ext = path.extname(resolved).toLowerCase().replace('.', '');
-              const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
-              const dataUrl = `data:${mime};base64,` + buf.toString('base64');
-              return origRequestImage.call(this, dataUrl);
+              const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
+              if (!isRpgmvHeader) {
+                console.log(`[mkmv-preload] Direct loading Unicode image via Node.js fs: ${targetUrl}`);
+                const ext = path.extname(resolved).toLowerCase().replace('.', '');
+                const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
+                const dataUrl = `data:${mime};base64,` + buf.toString('base64');
+                return origRequestImage.call(this, dataUrl);
+              }
             } catch (e) {
               console.error('[mkmv-preload] Direct image load error:', e);
             }
@@ -1648,23 +1680,33 @@ function setupUnicodeImageRecovery() {
             this._image.addEventListener('error', function onImageError(e) {
               try {
                 const retryUrl = url || self._url || '';
+                if (retryUrl.startsWith('data:') || retryUrl.startsWith('blob:')) {
+                  if (originalErrorListener) {
+                    originalErrorListener.call(self._image || this, e);
+                  }
+                  return;
+                }
                 const retryResolved = resolveGamePath(retryUrl);
-                if (retryResolved && origExistsSync.call(fs, retryResolved)) {
-                  console.log(`[mkmv-preload] Auto-recovering Unicode image via Node.js fs: ${retryUrl}`);
+                const retryEncrypted = retryResolved && (retryResolved.endsWith('.rpgmvp') || retryResolved.endsWith('.png_'));
+                if (!isEncryptedGame && !retryEncrypted && retryResolved && origExistsSync.call(fs, retryResolved)) {
                   const buf = origReadFileSync.call(fs, retryResolved);
-                  const ext = path.extname(retryResolved).toLowerCase().replace('.', '');
-                  const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
-                  const targetImg = self._image || this || (e && e.target);
-                  if (targetImg) {
-                    targetImg.src = `data:${mime};base64,` + buf.toString('base64');
-                    return;
+                  const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
+                  if (!isRpgmvHeader) {
+                    console.log(`[mkmv-preload] Auto-recovering Unicode image via Node.js fs: ${retryUrl}`);
+                    const ext = path.extname(retryResolved).toLowerCase().replace('.', '');
+                    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
+                    const targetImg = self._image || this || (e && e.target);
+                    if (targetImg) {
+                      targetImg.src = `data:${mime};base64,` + buf.toString('base64');
+                      return;
+                    }
                   }
                 }
               } catch (err) {
                 console.error('[mkmv-preload] Image recovery failed:', err);
               }
 
-              // 디스크에 진짜 파일이 없는 경우: 원래 알만툴 에러 핸들러 호출 (더미 주입 없이 정상 에러 리포트)
+              // 디스크에 진짜 파일이 없는 경우 또는 암호화 파일: 원래 알만툴 에러 핸들러 호출
               if (originalErrorListener) {
                 originalErrorListener.call(self._image || this, e);
               }
