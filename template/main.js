@@ -109,7 +109,18 @@ function resolveCaseInsensitive(targetPath, baseDir = __dirname) {
   return targetPath;
 }
 
-// 사용자 정의 옵션 (config.json) 로드
+// 디렉토리 경로 분리 (공유 런타임 vs 게임 데이터)
+const runtimeDir = __dirname;
+let gameRootDir = process.env.MKMV_GAME_DIR || runtimeDir;
+
+for (const arg of process.argv) {
+  if (arg.startsWith('--game-dir=')) {
+    const rawVal = arg.slice('--game-dir='.length);
+    if (rawVal) gameRootDir = path.resolve(rawVal);
+  }
+}
+
+// 사용자 정의 옵션 (config.json / mkmv.json) 로드
 let opt = {
   width: 1920,
   height: 1080,
@@ -127,18 +138,42 @@ let opt = {
   lowMemoryMode: true
 };
 
+// 1. 런타임 기본 설정 로드 (mkmv.json 기본, config.json 호환 폴백)
 try {
-  const configPath = path.join(__dirname, 'config.json');
-  if (fs.existsSync(configPath)) {
-    const raw = fs.readFileSync(configPath, 'utf8');
-    opt = Object.assign(opt, JSON.parse(raw));
+  const runtimeMkmv = path.join(runtimeDir, 'mkmv.json');
+  const runtimeConfig = path.join(runtimeDir, 'config.json');
+  if (fs.existsSync(runtimeMkmv)) {
+    opt = Object.assign(opt, JSON.parse(fs.readFileSync(runtimeMkmv, 'utf8')));
+  } else if (fs.existsSync(runtimeConfig)) {
+    opt = Object.assign(opt, JSON.parse(fs.readFileSync(runtimeConfig, 'utf8')));
   }
 } catch (e) {
-  console.error('[mkmv] config.json load error:', e);
+  console.error('[mkmv] runtime mkmv.json load error:', e);
+}
+
+// 2. 게임별 커스텀 설정 로드 (mkmv.json 기본, config.json 호환 폴백)
+try {
+  const gameMkmvJson = path.join(gameRootDir, 'mkmv.json');
+  const gameConfigJson = path.join(gameRootDir, 'config.json');
+  if (fs.existsSync(gameMkmvJson)) {
+    console.log('[mkmv] Loaded game-specific config from mkmv.json');
+    opt = Object.assign(opt, JSON.parse(fs.readFileSync(gameMkmvJson, 'utf8')));
+  } else if (gameRootDir !== runtimeDir && fs.existsSync(gameConfigJson)) {
+    console.log('[mkmv] Loaded game-specific config from legacy config.json');
+    opt = Object.assign(opt, JSON.parse(fs.readFileSync(gameConfigJson, 'utf8')));
+  }
+} catch (e) {
+  console.error('[mkmv] game mkmv.json load error:', e);
 }
 
 // 알만툴 MV / MZ 게임 디렉토리 격리 감지 (game/ 우선, 그 다음 www/, 최후 폴백으로 루트)
 function detectGameDirectory(baseDir) {
+  if (opt.gameDir) {
+    const custom = path.resolve(baseDir, opt.gameDir);
+    if (fs.existsSync(path.join(custom, 'index.html')) || fs.existsSync(custom)) {
+      return custom;
+    }
+  }
   const candidates = ['game', 'www'];
   for (const sub of candidates) {
     const candidatePath = path.join(baseDir, sub);
@@ -152,8 +187,10 @@ function detectGameDirectory(baseDir) {
   return path.join(baseDir, 'www'); // 기본값
 }
 
-const gameDir = detectGameDirectory(__dirname);
+const gameDir = detectGameDirectory(gameRootDir);
 const isMZ = fs.existsSync(path.join(gameDir, 'js', 'rmmz_core.js'));
+console.log(`[mkmv] Runtime Directory: ${runtimeDir}`);
+console.log(`[mkmv] Game Root Directory: ${gameRootDir}`);
 console.log(`[mkmv] Detected Game Engine: ${isMZ ? 'RPG Maker MZ' : 'RPG Maker MV'}, Directory: ${gameDir}`);
 
 try {
@@ -241,7 +278,7 @@ function createWindow() {
       enableRemoteModule: true,
       webSecurity: false,
       backgroundThrottling: false,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(runtimeDir, 'preload.js')
     }
   });
 
@@ -257,10 +294,11 @@ function createWindow() {
     win.setFullScreen(true);
   }
 
-  // 전체화면 토글(F4), 새로고침(F5, Ctrl+R) 등 임베디드 오작동 방지
+  // 전체화면 토글(F4), 새로고침(F5, Ctrl+R) 등 임베디드 오작동 방지 및 입력 진단 로깅
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown') {
       const key = input.key ? input.key.toUpperCase() : '';
+      console.log(`[mkmv-main-input] keyDown: key="${input.key}", code="${input.code}"`);
       if (key === 'F4' || key === 'F5' || (input.control && key === 'R')) {
         event.preventDefault();
       }

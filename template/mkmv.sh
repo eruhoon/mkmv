@@ -39,17 +39,50 @@ source $controlfolder/control.txt
 [ -f "${controlfolder}/mod_${CFW_NAME}.txt" ] && source "${controlfolder}/mod_${CFW_NAME}.txt"
 get_controls
 
-# Directory setup (루트 또는 서브폴더 위치 자동 적응)
-if [ -f "$SCRIPT_DIR/electron" ]; then
-  GAME_ROOT="$SCRIPT_DIR"
-elif [ -d "/$directory/ports/$GAME_CODE" ]; then
+# Directory setup (게임 데이터 디렉토리 감지)
+if [ -d "/$directory/ports/$GAME_CODE" ]; then
   GAME_ROOT="/$directory/ports/$GAME_CODE"
 elif [ -d "$SCRIPT_DIR/$GAME_CODE" ]; then
   GAME_ROOT="$SCRIPT_DIR/$GAME_CODE"
+elif [ -f "$SCRIPT_DIR/electron" ]; then
+  GAME_ROOT="$SCRIPT_DIR"
 else
   GAME_ROOT="$(pwd)"
 fi
 export GAME_ROOT
+
+# Runtime setup (포터블 모드 vs 공유 런타임 모드 다단계 자동 감지)
+RUNTIME_DIR=""
+if [ -f "$GAME_ROOT/electron" ]; then
+  # 1. 포터블 모드: 게임 디렉토리 자체에 electron이 존재하는 경우
+  RUNTIME_DIR="$GAME_ROOT"
+elif [ -f "$SCRIPT_DIR/mkmv-runtime/electron" ]; then
+  # 2. 공유 런타임 모드: ports/mkmv-runtime
+  RUNTIME_DIR="$SCRIPT_DIR/mkmv-runtime"
+elif [ -f "/$directory/ports/mkmv-runtime/electron" ]; then
+  RUNTIME_DIR="/$directory/ports/mkmv-runtime"
+elif [ -f "$SCRIPT_DIR/mkmv/electron" ]; then
+  # 3. 대체 폴더명 호환: ports/mkmv
+  RUNTIME_DIR="$SCRIPT_DIR/mkmv"
+elif [ -f "/$directory/ports/mkmv/electron" ]; then
+  RUNTIME_DIR="/$directory/ports/mkmv"
+elif [ -f "$controlfolder/libs/mkmv-runtime/electron" ]; then
+  # 4. PortMaster 시스템 라이브러리 디렉토리
+  RUNTIME_DIR="$controlfolder/libs/mkmv-runtime"
+fi
+
+if [ -z "$RUNTIME_DIR" ] || [ ! -f "$RUNTIME_DIR/electron" ]; then
+  echo "================================================="
+  echo "[mkmv ERROR] Runtime directory not found!"
+  echo "Please make sure 'mkmv-runtime' exists in ports/ or ports/mkmv-runtime."
+  echo "================================================="
+  if [ -n "$controlfolder" ] && type pm_message >/dev/null 2>&1; then
+    pm_message "Error: mkmv-runtime not found! Please place mkmv-runtime in ports/"
+  fi
+  exit 1
+fi
+export RUNTIME_DIR
+
 if command -v mktemp >/dev/null 2>&1; then
   RUNNER="$(mktemp /tmp/mkmv_runner.XXXXXX.sh 2>/dev/null || echo "/tmp/mkmv_runner_${$}.sh")"
 else
@@ -81,14 +114,15 @@ trap cleanup EXIT INT TERM
 
 CONF_DIR="$GAME_ROOT/conf"
 mkdir -p "$CONF_DIR"
-mkdir -p "$GAME_ROOT/www/save" "$GAME_ROOT/game/save"
+mkdir -p "$GAME_ROOT/www/save" "$GAME_ROOT/game/save" "$GAME_ROOT/save"
 
-# Enable logging
+# Enable logging (게임 디렉토리 내에 독립적으로 기록)
 > "$GAME_ROOT/log.txt" && exec > >(tee "$GAME_ROOT/log.txt") 2>&1
 
 echo "================================================="
 echo "Starting $GAME_CODE on PortMaster ($CFW_NAME)"
-echo "Directory: $GAME_ROOT"
+echo "Game Directory: $GAME_ROOT"
+echo "Runtime Directory: $RUNTIME_DIR"
 echo "Date: $(date)"
 echo "================================================="
 
@@ -122,7 +156,7 @@ echo "=== ACTIVE MEMORY & SWAP STATUS ==="
 free -m 2>/dev/null
 
 # WebGL / SwiftShader 호환 라이브러리 보존
-chmod +x "$GAME_ROOT"/*.so 2>/dev/null
+chmod +x "$RUNTIME_DIR"/*.so "$GAME_ROOT"/*.so 2>/dev/null
 
 # Wayland 소켓 파일 동적 탐색 (ROCKNIX 등 이미 켜진 Wayland 감지)
 for d in "$XDG_RUNTIME_DIR" "/run/user/0" "/var/run/0-runtime-dir" "/run/user/1000" "/var/run" "/tmp" "/run"; do
@@ -162,13 +196,20 @@ export LANG=C
 
 cd "$GAME_ROOT"
 
-chmod +x "$GAME_ROOT/electron" 2>/dev/null
-chmod +x "$GAME_ROOT/gptokeyb" 2>/dev/null
-chmod -R +r "$GAME_ROOT/lib" "$GAME_ROOT/conf" "$GAME_ROOT/share" "$GAME_ROOT/www" "$GAME_ROOT/game" 2>/dev/null
+chmod +x "$RUNTIME_DIR/electron" 2>/dev/null
+chmod +x "$RUNTIME_DIR/gptokeyb" "$GAME_ROOT/gptokeyb" 2>/dev/null
+chmod -R +r "$RUNTIME_DIR/lib" "$RUNTIME_DIR/conf" "$RUNTIME_DIR/share" 2>/dev/null
+chmod -R +r "$GAME_ROOT/conf" "$GAME_ROOT/www" "$GAME_ROOT/game" 2>/dev/null
 
-# GPTK 실행 및 프로세스 바인딩 (SELECT + START 강제 종료 지원)
-$GPTOKEYB "electron" -c "./keymap.gptk" -k "electron" &
-pm_platform_helper "$GAME_ROOT/electron" >/dev/null
+# GPTK 실행 및 프로세스 바인딩 (게임별 키맵 우선, 없으면 런타임 공용 기본 키맵)
+if [ -f "$GAME_ROOT/keymap.gptk" ]; then
+  GPTK_FILE="$GAME_ROOT/keymap.gptk"
+else
+  GPTK_FILE="$RUNTIME_DIR/keymap.gptk"
+fi
+echo "Using GPTK keymap: $GPTK_FILE"
+$GPTOKEYB "electron" -c "$GPTK_FILE" -k "electron" &
+pm_platform_helper "$RUNTIME_DIR/electron" >/dev/null
 
 echo "=== DISPLAY & RUNTIME ENVIRONMENT ==="
 echo "CFW_NAME: $CFW_NAME"
@@ -180,7 +221,8 @@ echo "PULSE_SERVER: $PULSE_SERVER"
 # 램디스크(/tmp)에 에뮬레이션스테이션에 노출되지 않는 임시 실행기 생성 (SD 카드 목록 오염 방지)
 cat << 'RUNNER_EOF' > "$RUNNER"
 #!/bin/bash
-GAME_ROOT="${GAME_ROOT:-/userdata/roms/ports/mkmv}"
+GAME_ROOT="${GAME_ROOT:-$(pwd)}"
+RUNTIME_DIR="${RUNTIME_DIR:-$GAME_ROOT}"
 cd "$GAME_ROOT"
 
 # Crusty 등 외부 LD_PRELOAD 및 라이브러리 간섭 차단
@@ -193,15 +235,18 @@ export MALLOC_TRIM_THRESHOLD_=65536
 export MALLOC_MMAP_THRESHOLD_=65536
 
 # Electron 전용 라이브러리 및 환경 설정 (외부 weston/crusty 경로를 완벽히 배제)
-export LD_LIBRARY_PATH="$GAME_ROOT/lib:$GAME_ROOT:/usr/lib:/usr/lib/aarch64-linux-gnu:/lib:/lib/aarch64-linux-gnu"
+export LD_LIBRARY_PATH="$RUNTIME_DIR/lib:$RUNTIME_DIR:/usr/lib:/usr/lib/aarch64-linux-gnu:/lib:/lib/aarch64-linux-gnu"
 export ELECTRON_ENABLE_LOGGING=1
 export GTK_CSD=0
 export PULSE_LATENCY_MSEC=60
 
 # GDK Pixbuf 및 MIME 데이터베이스 설정
-export GDK_PIXBUF_MODULEDIR="$GAME_ROOT/lib"
-export GDK_PIXBUF_MODULE_FILE="$GAME_ROOT/conf/loaders.cache"
-export XDG_DATA_DIRS="$GAME_ROOT/share:/usr/share:$XDG_DATA_DIRS"
+export GDK_PIXBUF_MODULEDIR="$RUNTIME_DIR/lib"
+export GDK_PIXBUF_MODULE_FILE="$RUNTIME_DIR/conf/loaders.cache"
+export XDG_DATA_DIRS="$RUNTIME_DIR/share:/usr/share:$XDG_DATA_DIRS"
+
+export MKMV_RUNTIME_DIR="$RUNTIME_DIR"
+export MKMV_GAME_DIR="$GAME_ROOT"
 
 FLAGS="--ozone-platform=wayland \
        --enable-features=UseOzonePlatform \
@@ -218,11 +263,13 @@ FLAGS="--ozone-platform=wayland \
        --disable-component-update \
        --disable-domain-reliability \
        --disable-sync \
-       --disable-translate"
+       --disable-translate \
+       --user-data-dir=$GAME_ROOT/conf \
+       --game-dir=$GAME_ROOT"
 
-chmod +x "$GAME_ROOT/electron" 2>/dev/null
-echo "Launching Electron: $GAME_ROOT/electron . $FLAGS"
-exec "$GAME_ROOT/electron" . $FLAGS
+chmod +x "$RUNTIME_DIR/electron" 2>/dev/null
+echo "Launching Electron: $RUNTIME_DIR/electron $RUNTIME_DIR $FLAGS"
+exec "$RUNTIME_DIR/electron" "$RUNTIME_DIR" $FLAGS
 RUNNER_EOF
 chmod +x "$RUNNER" 2>/dev/null
 

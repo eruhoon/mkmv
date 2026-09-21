@@ -1,80 +1,113 @@
-# 🎮 RPG Maker MV & MZ 포트마스터 통합 템플릿 사용 가이드 (ROCKNIX / KNULLI / ARM64)
+# 🎮 RPG Maker MV & MZ 포트마스터 러너 사용 가이드 (ROCKNIX / KNULLI / ARM64)
 
-이 패키지는 Anbernic 등 Linux ARM64 휴대용 게임기(**ROCKNIX**, **KNULLI**, Batocera 등)에서 **모든 RPG Maker MV 및 MZ 게임을 단 몇 번의 복사만으로 손쉽게 추가/증식**할 수 있도록 모든 필수 런타임, 키 매핑, 플러그인 호환성 레이어가 완벽히 패키징된 **순정 통합 템플릿(Master Template)**입니다.
+이 패키지는 Linux ARM64 휴대용 게임기(**ROCKNIX**, **KNULLI**, Batocera 등)에서 **모든 RPG Maker MV 및 MZ 게임을 손쉽게 추가/증식**할 수 있도록 제작된 오픈소스 러너입니다.
+
+mkmv는 사용자의 운용 방식에 따라 **두 가지 배포 패키지**를 제공합니다:
+1. **공유 런타임 패키지 (`mkmv-runtime-v*.zip`)** ⭐ **[강력 추천]**: 대용량 런타임 바이너리를 1회만 설치하고 여러 게임이 공유하여 SD 카드 용량을 절약하는 방식
+2. **올인원 포터블 패키지 (`mkmv-portable-v*.zip`)**: 게임 하나당 런타임이 통째로 묶여 있는 독립 구동 방식
 
 ---
 
-## 📁 템플릿 폴더 구조
+## 🌟 방식 A. 공유 런타임 방식 (권장: 다수 게임 관리 & 용량 절약)
+
+SD 카드의 `ports/` 디렉토리에 **`mkmv-runtime` 폴더를 한 번만 설치**해두면, 게임을 10개, 100개 추가해도 무거운 Electron 바이너리(120MB)가 중복되지 않고 오직 순수 게임 데이터만 유지됩니다.
+
+### 📁 디렉토리 구조 예시
 
 ```text
-mkmv/
-├── mkmv.sh                         # 범용 런처 스크립트 (KNULLI / ROCKNIX 자동 분기)
-├── HOW_TO_USE.md                   # 본 사용 설명서
-├── electron                        # aarch64 실행 바이너리
-├── main.js                         # 창/디스플레이 관리 스크립트
-├── preload.js                      # 1:1 실측 패드 매핑, NW.js 심, 세이브/오디오/배속 훅
-├── config.json                     # ⭐ 화면 해상도, 배속, FPS, 메모리 옵션
-├── package.json                    # 엔진 설정 매니페스트
-├── keymap.gptk                     # 포트마스터 표준 키패드 매핑
-├── fonts/                          # ⭐ Noto Sans CJK KR 자동 폴백 폰트
-├── port.json                       # 포트마스터 메타데이터
-├── locales/, resources/...         # 필수 런타임 에셋
-├── www/                            # ⭐ [알만툴 MV 게임 내용물을 넣는 곳]
-└── game/                           # ⭐ [알만툴 MZ 게임 내용물을 넣는 곳 (선택)]
+roms/ports/ (또는 ports/)
+│
+├── mkmv-runtime/                      # 🌟 [공유 런타임] (한 번만 설치, 약 120MB)
+│   ├── electron, lib/, conf/, fonts/...
+│   ├── main.js, preload.js, mkmv.json, keymap.gptk
+│   └── template.zip                   # 📦 [새 게임 생성용 압축 템플릿]
+│
+├── RJ00000000.sh                      # 🚀 [내 게임 런처] (PortMaster 메뉴에 노출)
+└── RJ00000000/                        # 🎮 [내 게임 데이터 폴더] (수십 MB 절약!)
+    ├── mkmv.json                      # 게임별 맞춤 설정 (해상도, 배속, 메모리 등)
+    ├── keymap.gptk                    # (선택) 특수 조작이 필요한 게임만 개별 오버라이드
+    ├── log.txt                        # 게임별 독립 실행 로그
+    └── game/ (또는 www/)              # 순수 게임 데이터 (index.html, js, img, audio...)
 ```
 
+### 🚀 새 게임 추가하는 방법 (딱 3단계)
+
+#### 1단계. 템플릿 압축 해제
+`ports/mkmv-runtime/template.zip` 압축 파일을 엽니다.  
+(내부 구성: `game.sh`, `game/mkmv.json`, `game/keymap.gptk`, `game/game/`)
+
+#### 2단계. 이름 변경
+추출한 파일과 폴더를 원하는 게임명(예: `RJ00000000`)으로 바꿉니다:
+- `game.sh` ➔ **`RJ00000000.sh`** 로 변경
+- `game` 폴더 ➔ **`RJ00000000`** 으로 변경
+
+> 💡 **스마트 자동 매칭**: 런처 스크립트(`.sh`)가 파일명과 동일한 폴더를 자동으로 찾아서 연결하므로 스크립트 내부를 수정할 필요가 전혀 없습니다!
+
+#### 3단계. 게임 데이터 넣기
+엔진 종류에 따라 게임 폴더 안에 게임 에셋을 넣습니다:
+- **RPG Maker MV 게임**: 게임 배포본의 **`www` 내용물**을 `RJ00000000/www/` (또는 `game/`)에 넣습니다.
+- **RPG Maker MZ 게임**: 게임 배포본의 **루트 내용물**(`index.html`, `js/rmmz_*.js` 등)을 `RJ00000000/game/`에 넣습니다.
+
+이제 기기를 켜고 **Ports** 메뉴에서 `RJ00000000`을 실행하면 끝납니다!
+
 ---
 
-## 🚀 새 게임 추가하는 방법 (딱 3단계)
+## 📦 방식 B. 올인원 포터블 방식 (단일 게임 독립형)
 
-### 1단계. 템플릿 복사 및 이름 변경
-새로 넣고 싶은 게임 이름(예: `MyGame`)으로 파일과 폴더를 복제합니다.
+기존 방식 그대로 게임 폴더 하나 안에 바이너리와 게임 데이터를 함께 담아 독립적으로 운용하고 싶을 때 사용합니다.
 
-1. `mkmv.sh` 파일을 복사하여 **`MyGame.sh`** 로 이름을 바꿉니다.
-2. `mkmv` 폴더를 복사하여 **`MyGame`** 으로 이름을 바꿉니다.
-
-> 💡 **스마트 자동 매칭**: 런처 스크립트가 `.sh` 파일명과 동일한 폴더를 자동으로 찾아서 연결하므로, 스크립트 내부를 수정하지 않아도 이름만 같으면 알아서 구동됩니다!
-
----
-
-### 2단계. 게임 파일 넣기 (MV vs MZ 독립 분리)
-엔진 종류에 따라 게임 폴더 안에 파일들을 넣습니다. 러너 핵심 파일들과 섞이지 않고 완전히 분리됩니다:
-
-* **RPG Maker MV 게임**: 게임 배포본의 **`www` 폴더 내용물**을 `MyGame/www/` 에 넣습니다.
-* **RPG Maker MZ 게임**: 게임 배포본의 **루트 내용물**(`index.html`, `js/rmmz_*.js` 등)을 `MyGame/game/` 에 넣습니다. (기존처럼 `www/`에 넣어도 자동 감지)
+### 📁 포터블 폴더 구조
 
 ```text
-# 알만툴 MV인 경우:
-MyGame/
-└── www/
-    ├── index.html       ← (필수)
-    ├── js/
-    ├── data/
-    ├── img/
-    └── audio/
-
-# 알만툴 MZ인 경우:
-MyGame/
-└── game/
-    ├── index.html       ← (필수)
-    ├── js/              ← (rmmz_core.js 등)
-    ├── data/
-    ├── img/
-    └── audio/
+roms/ports/
+├── MyGame.sh                          # 런처 스크립트
+└── MyGame/                            # 독립 게임 폴더
+    ├── electron, lib/, conf/, fonts/...
+    ├── mkmv.json
+    └── www/ (또는 game/)
 ```
+
+1. `mkmv.sh`를 복사하여 **`MyGame.sh`** 로 변경
+2. `mkmv` 폴더를 복사하여 **`MyGame`** 으로 변경
+3. `MyGame/www/` 안에 게임 에셋을 넣고 실행
 
 ---
 
-### 3단계. SD 카드에 복사 후 게임기에서 실행
-SD 카드의 **`roms/ports/`** (또는 `ports/`) 경로로 복사합니다:
+## ⚙️ 게임별 맞춤 설정 (`mkmv.json`)
 
-```text
-SD카드:/roms/ports/
-├── MyGame.sh
-└── MyGame/
+각 게임 폴더 안에 있는 `mkmv.json`을 열어 해상도, 배속, 프레임 레이트, 메모리 절약 모드 등을 게임별로 다르게 세팅할 수 있습니다:
+
+```json
+{
+  "width": 1920,
+  "height": 1080,
+  "fullscreen": true,
+  "autoDetectResolution": true,
+  "forceDeviceScaleFactor": 1.0,
+  "scaling": "fit",
+  "pixelated": true,
+  "disableGpu": true,
+  "hideCursor": false,
+  "disableTouch": false,
+  "showFps": false,
+  "debugKeymap": false,
+  "disableNativeGamepad": true,
+  "fastForward": true,
+  "fastForwardSpeed": 2,
+  "lowMemoryMode": true
+}
 ```
 
-기기를 켜고 **Ports** 목록에서 `MyGame`을 실행하면 끝납니다!
+* `"disableNativeGamepad": true` : PortMaster의 `gptokeyb` 가상 키보드와 브라우저 Gamepad API의 이중 입력 및 버튼 충돌(A버튼이 cancel로 덮어써져 키가 씹히는 문제)을 원천 차단 (기본값: `true`)
+* `"debugKeymap": true` : 게임 화면 좌측 상단에 실시간 패드/키보드 입력 디버그 오버레이 표시 (`F10` 단축키로 온오프 토글 가능)
+* `"scaling": "fit"` : 원본 도트 종횡비를 유지하며 화면에 꽉 채우고 중앙 배치 (기본값)
+* `"scaling": "fill"` : 화면 전체에 빈틈없이 가득 채움 (풀 스트레칭)
+* `"showFps": true` : 화면 좌상단에 네이티브 FPS 및 렌더링 성능 오버레이 표시
+* `"debugKeymap": true` : 화면 좌상단에 실시간 키 입력 및 알만툴 키매핑(keydown/up, action) 디버그 창 표시 (F10으로도 토글 가능)
+* `"fastForward": true` : R3(우측 스틱 클릭)로 1배속 ↔ 고속 배속 토글 (발열 방지 프레임 스킵 내장)
+* `"fastForwardSpeed": 2` : 배속 배율 (2: 2배속, 3: 3배속)
+* `"lowMemoryMode": true` : 1GB RAM 기기(H700, RK3326 등)를 위한 V8 힙 제한 및 렌더러 캐시 최적화 모드
+* `"gameDir": "custom_path"` : (선택사항) 게임 에셋이 특수한 하위 폴더에 있는 경우 수동 지정 가능
 
 ---
 
@@ -90,55 +123,19 @@ SD카드:/roms/ports/
 | **Y 버튼 (좌측)** | `Space` | **보조 액션 / 텍스트 스킵** |
 | **START** | `Enter` | **시작 / 결정** |
 | **SELECT** | `Esc` | **메뉴 열기 / 닫기** |
-| **R3 (우측 스틱 클릭)** | `R` / `Tab` | **⏩ 고속 배속 토글 (1배속 ↔ 2배속 전환, 발열 억제 프레임 스킵 내장)** |
+| **R3 (우측 스틱 클릭)** | `R` / `Tab` | **⏩ 고속 배속 토글 (1배속 ↔ 2배속, CPU 과열 억제 프레임 스킵)** |
 | **SELECT + START (길게)** | - | **⭐ 게임 안전 강제 종료 (포트마스터 메뉴 복귀)** |
 
----
-
-## 💡 유의사항 및 고급 팁
-
-### 1. 세이브 파손 방지 (Atomic Safe-Save) 및 자동 복구 (내장)
-* RPG Maker MV는 세이브 시 직접 덮어쓰기를 하므로 전원 차단이나 강제 종료 시 0바이트로 세이브가 깨지는 고질적인 문제가 있습니다.
-* `mkmv`는 세이브 시 **기존 정상 세이브를 `.bak/` 숨김 서브폴더에 안전하게 보존**하여 세이브 폴더를 난잡하게 만들지 않으며, 임시 파일 작성 후 **물리 SD 카드 강제 플러시(`fsync`)**를 거쳐 원자적으로 교체합니다.
-* 혹시 모를 전원 차단으로 세이브가 0바이트로 깨지더라도, 게임 로드 시 **`.bak/` 내의 직전 정상 백업을 자동 감지하여 복구**합니다. (구버전 `.bak` 파일과도 호환 복구 지원)
-
-### 2. 슬립/절전 모드 오디오 자동 복구 (내장)
-* 휴대용 기기 전원 버튼으로 절전(Sleep)에 진입했다가 복귀 시 오디오가 멈추는 현상을 방지하기 위해, 화면 복귀 및 포커스 시 **WebAudio 컨텍스트를 자동 재개(`resume`)**합니다.
-
-### 3. 화면 해상도 및 옵션 설정 (`config.json`)
-* 기본적으로 기기 디스플레이 해상도를 자동 감지(`autoDetectResolution: true`)합니다.
-* 특정 해상도 고정, FPS 표시, 배속 기능 등을 켜거나 끄고 싶다면 `config.json`을 수정하세요:
-
-```json
-{
-  "width": 1920,
-  "height": 1080,
-  "fullscreen": true,
-  "autoDetectResolution": true,
-  "forceDeviceScaleFactor": 1.0,
-  "scaling": "fit",
-  "pixelated": true,
-  "disableGpu": true,
-  "hideCursor": false,
-  "disableTouch": false,
-  "showFps": false,
-  "fastForward": true,
-  "fastForwardSpeed": 2,
-  "lowMemoryMode": true
-}
-```
-
-* `"scaling": "fit"` : 원래 게임 비율(도트 비율)을 유지하며 화면 상하를 꽉 채우고 화면 정중앙에 배치 (기본값)
-* `"scaling": "fill"` : 잘림 없이 화면 전체에 가로/세로를 가득 채움 (풀 스트레칭)
-* `"hideCursor": true` : 화면에서 마우스 커서를 완전히 숨김
-* `"disableTouch": true` : 원치 않는 터치스크린 입력 간섭을 전면 차단
-* `"showFps": true` : 화면 좌상단에 실시간 네이티브 FPS 및 성능 측정기 표시
-* `"fastForward": true` : R3(우측 스틱 클릭)로 켜고 끌 수 있는 고속 배속 모드 활성화 (화면 우상단에 `▶▶ 2x` 인디케이터 표시, 프레임 스킵을 통해 CPU 과열 방지)
-* `"fastForwardSpeed": 2` : 배속 배율 (기본값 2배속, 3 설정 시 3배속)
-* `"lowMemoryMode": true` : RAM 1GB 기기(KNULLI 등)를 위한 V8 힙 512MB 제한 모드 (기본 활성화)
+> 💡 게임별로 특수한 조작 키가 필요하다면, 개별 게임 폴더(`RJ00000000/`) 안에 `keymap.gptk`를 넣어두면 공용 런타임 키맵을 덮어쓰고 해당 게임 전용 키맵이 우선 적용됩니다.
 
 ---
 
-### 4. 게임 백업 팁
-* 완성된 `mkmv` 폴더를 압축해서 보관해 두시면 언제든 새 게임을 무제한으로 찍어내실 수 있습니다.
+## 💡 유의사항 및 내장 기능
 
+1. **세이브 파손 방지 (Atomic Safe-Save) & 백업 자동 복구**
+   - 배터리 방전이나 강제 종료 시 세이브 파일이 0바이트로 깨지는 문제를 방지하기 위해, SD 카드 물리 `fsync` 플러시와 `.bak` 안전 백업을 거쳐 원자적으로 기록합니다.
+   - 혹시 모를 전원 차단으로 0바이트 세이브가 발생하더라도, 로드 시 `.bak` 내의 직전 정상 세이브를 자동 감지하여 복구합니다.
+2. **슬립/절전 모드 오디오 자동 복구**
+   - 기기 절전(Sleep) 진입 후 복귀 시 사운드가 먹통이 되는 현상을 막기 위해, 화면 복귀 시 WebAudio 컨텍스트를 자동 재개(`resume`)합니다.
+3. **완벽한 캐시 및 데이터 격리**
+   - 공유 런타임을 사용하더라도 Chromium 캐시, 세션 데이터, 로컬스토리지, 에러 로그는 각 게임 폴더(`conf/`, `log.txt`) 내부로만 완벽히 격리 저장됩니다.

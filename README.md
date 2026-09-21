@@ -1,32 +1,43 @@
-# 🎮 mkmv (RPG Maker MV & MZ - PortMaster Runner Template)
+# 🎮 mkmv (RPG Maker MV & MZ - PortMaster Runner)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build and Release](https://github.com/eruhoon/mkmv/actions/workflows/release.yml/badge.svg)](https://github.com/eruhoon/mkmv/actions/workflows/release.yml)
 
-An all-in-one universal master template and runner package for seamlessly launching and multiplying **RPG Maker MV** and **RPG Maker MZ** games on Linux ARM64 handheld devices (**ROCKNIX**, **KNULLI**, Batocera, etc.) via **PortMaster**.
+An all-in-one universal runner and shared runtime architecture for seamlessly launching and multiplying **RPG Maker MV** and **RPG Maker MZ** games on Linux ARM64 handheld devices (**ROCKNIX**, **KNULLI**, Batocera, ArkOS, etc.) via **PortMaster**.
 
 ---
 
 ## ✨ Features
 
-* **Native Hardware Gamepad Mapping**: Fully calibrated 1:1 hardware gamepad mapping for standard handheld layouts, analog sticks, and integrated NW.js compatibility shims (`preload.js`).
+* **Shared Runtime Package & Portable Dual Support**:
+  - **Shared Runtime (`mkmv-runtime`)**: Install the 120MB Electron runtime once in `ports/`, and share it across dozens of games—saving gigabytes of SD card storage!
+  - **Portable Package**: Classic all-in-one standalone package for single-game setups.
+  - **Clean UI & No Dummy Entries**: Packaged `template.zip` prevents EmulationStation ports list pollution.
+* **Per-Game Custom Config (`mkmv.json`)**: Seamless per-game overrides for resolution, scaling, fast-forward, and memory limits.
+* **Native Hardware Gamepad Mapping**: Fully calibrated 1:1 hardware gamepad mapping for handheld layouts with optional per-game `keymap.gptk` overrides.
 * **Robust Wayland / Weston Runtime**: Automatic environment detection and optimized launch pipelines for both KNULLI (Weston Auto Kiosk) and ROCKNIX (Sway).
 * **R3 Turbo Fast-Forward & Thermal Throttling Guard**: Toggle 2x speedup with R3 stick click (`▶▶ 2x` on-screen indicator) with a 50% render frame-skip engine to prevent SoC overheating.
 * **Atomic Safe-Save Protection**: Hardware-level SD card physical fsync flush, isolated `.bak` backups (`save/.bak/`), and automatic corrupted 0-byte save restoration.
 * **Sleep/Resume Audio Recovery**: Automatic WebAudio context recovery ensures sound never freezes after device sleep or standby.
 * **Universal CJK Fallback Fonts**: Bundled `Noto Sans CJK KR` auto-injection eliminates missing Korean/Japanese glyphs and tofu (□) characters.
 * **Low-Memory Protection for 1GB RAM Devices**: 512MB compressed ZRAM dynamic swap, `MALLOC_ARENA_MAX=1`, V8 heap capping, and scene-transition GC triggers prevent Out-Of-Memory (OOM) crashes on budget handhelds.
-* **Smart Folder Auto-Matching**: Automatically detects and matches game directories identical to the `.sh` launcher name—no script editing required.
 * **Dual Engine Support**: Separate isolated layouts and hooks supporting both RPG Maker MV (`www/`) and RPG Maker MZ (`game/`).
-* **Lightweight Repository**: Bulky binaries are excluded from git history and packaged cleanly via `pnpm build` or downloadable directly from GitHub Releases.
 
 ---
 
 ## 🚀 Quick Start (For Users)
 
-1. Download the latest **`mkmv-v0.3.0.zip`** from the [Releases](https://github.com/eruhoon/mkmv/releases) page.
-2. Extract the archive and copy the `mkmv.sh` file and `mkmv` folder to `roms/ports/` on your device's SD card.
-3. Place your RPG Maker MV game's `www` folder contents into `mkmv/www/` (or MZ contents into `mkmv/game/`) and launch from the Ports menu!
+Download the latest release from the [Releases](https://github.com/eruhoon/mkmv/releases) page:
+
+### Option 1: Shared Runtime (Recommended for Multiple Games)
+1. Download **`mkmv-runtime-v*.zip`** and extract the **`mkmv-runtime`** folder into `roms/ports/` on your SD card.
+2. Unzip `mkmv-runtime/template.zip` and rename the extracted `game.sh` and `game` folder to your game's name (e.g. `RJ00000000.sh` and `RJ00000000`).
+3. Place your game files into `RJ00000000/game/` (or `www/`) and launch from the Ports menu!
+
+### Option 2: Portable Package (Single Game)
+1. Download **`mkmv-portable-v*.zip`**.
+2. Copy `mkmv.sh` and `mkmv` folder into `roms/ports/`.
+3. Place your game assets into `mkmv/www/` and launch!
 
 > 📖 For detailed game duplication, multi-game setup, and advanced config options, see **[HOW_TO_USE.md](HOW_TO_USE.md)**.
 
@@ -41,14 +52,14 @@ This project supports cross-platform automated builds powered by **Node.js (v20+
 pnpm install
 ```
 
-### 2. Build Release Package
+### 2. Build Release Packages (Dual Output)
 ```bash
 pnpm run build
 ```
 
 * Automatically downloads and caches the official Electron aarch64 runtime.
 * Cleans conflicting driver libraries and bundles runtime assets and template scripts.
-* Outputs the prepared folder `dist/mkmv/` and the final release archive **`dist/mkmv-v*.zip`**.
+* Outputs both **`dist/mkmv-runtime-v*.zip`** and **`dist/mkmv-portable-v*.zip`**.
 
 ### 3. Clean Build Artifacts
 ```bash

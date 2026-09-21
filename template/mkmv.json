@@ -1,0 +1,18 @@
+{
+  "width": 1920,
+  "height": 1080,
+  "fullscreen": true,
+  "autoDetectResolution": true,
+  "forceDeviceScaleFactor": 1.0,
+  "scaling": "fit",
+  "pixelated": true,
+  "disableGpu": true,
+  "hideCursor": false,
+  "disableTouch": false,
+  "showFps": false,
+  "debugKeymap": false,
+  "disableNativeGamepad": true,
+  "fastForward": true,
+  "fastForwardSpeed": 2,
+  "lowMemoryMode": true
+}

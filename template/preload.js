@@ -27,6 +27,16 @@ const origCloseSync = fs.closeSync;
 const origMkdirSync = fs.mkdirSync;
 
 // 1. RPG Maker MV & MZ 작업 디렉토리 및 메인 모듈 경로 자동 감지
+const runtimeDir = __dirname;
+let gameRootDir = process.env.MKMV_GAME_DIR || runtimeDir;
+
+for (const arg of process.argv) {
+  if (arg.startsWith('--game-dir=')) {
+    const rawVal = arg.slice('--game-dir='.length);
+    if (rawVal) gameRootDir = path.resolve(rawVal);
+  }
+}
+
 function detectGameDirectory(baseDir) {
   const candidates = ['game', 'www'];
   for (const sub of candidates) {
@@ -41,7 +51,7 @@ function detectGameDirectory(baseDir) {
   return path.join(baseDir, 'www'); // 기본값
 }
 
-const gameDir = detectGameDirectory(__dirname);
+const gameDir = detectGameDirectory(gameRootDir);
 const isMZ = origExistsSync.call(fs, path.join(gameDir, 'js', 'rmmz_core.js'));
 
 try {
@@ -411,12 +421,22 @@ fs.writeFileSync = function(p, data, options) {
   return origWriteFileSync.call(fs, resolvedPath, data, options);
 };
 
-// 사용자 정의 옵션 (config.json) 로드
-let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false, showFps: false, fastForward: true, fastForwardSpeed: 2, lowMemoryMode: true, imageCacheLimit: 3 };
+// 사용자 정의 옵션 (config.json / mkmv.json) 로드
+let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false, showFps: false, debugKeymap: false, fastForward: true, fastForwardSpeed: 2, lowMemoryMode: true, imageCacheLimit: 3 };
 try {
-  const configPath = path.join(__dirname, 'config.json');
-  if (origExistsSync.call(fs, configPath)) {
-    userOpt = Object.assign(userOpt, JSON.parse(origReadFileSync.call(fs, configPath, 'utf8')));
+  const runtimeMkmv = path.join(runtimeDir, 'mkmv.json');
+  const runtimeConfig = path.join(runtimeDir, 'config.json');
+  if (origExistsSync.call(fs, runtimeMkmv)) {
+    userOpt = Object.assign(userOpt, JSON.parse(origReadFileSync.call(fs, runtimeMkmv, 'utf8')));
+  } else if (origExistsSync.call(fs, runtimeConfig)) {
+    userOpt = Object.assign(userOpt, JSON.parse(origReadFileSync.call(fs, runtimeConfig, 'utf8')));
+  }
+  const gameMkmvJson = path.join(gameRootDir, 'mkmv.json');
+  const gameConfigJson = path.join(gameRootDir, 'config.json');
+  if (origExistsSync.call(fs, gameMkmvJson)) {
+    userOpt = Object.assign(userOpt, JSON.parse(origReadFileSync.call(fs, gameMkmvJson, 'utf8')));
+  } else if (gameRootDir !== runtimeDir && origExistsSync.call(fs, gameConfigJson)) {
+    userOpt = Object.assign(userOpt, JSON.parse(origReadFileSync.call(fs, gameConfigJson, 'utf8')));
   }
 } catch (e) {}
 
@@ -662,13 +682,20 @@ function injectResolutionStyles() {
     }
     `;
   }
-  if (userOpt.hideCursor) {
-    cssText += `
-    html, body, canvas, * {
-      cursor: none !important;
+  cssText += `
+    #GameCanvas {
+      z-index: 1 !important;
     }
-    `;
-  }
+    #UpperCanvas {
+      z-index: 2 !important;
+    }
+    #mkmv-keymap-debug, #mkmv-fps-counter, #mkmv-fast-forward {
+      z-index: 2147483647 !important;
+      position: absolute !important;
+      transform: translateZ(9999px) !important;
+      will-change: transform !important;
+    }
+  `;
   style.textContent = cssText;
   if (document.head) {
     document.head.appendChild(style);
@@ -790,14 +817,19 @@ window.addEventListener('resize', () => {
 // 6. Noto Sans CJK KR 자동 폴백 폰트 시스템
 function setupFallbackFont() {
   const possiblePaths = [
-    // 1순위: 러너 자체 번들 폰트 (자체 완결형)
-    path.join(__dirname, 'fonts', 'NotoSansCJKkr-Regular.otf'),
-    path.join(__dirname, 'fonts', 'NotoSansKR-Regular.otf'),
-    path.join(__dirname, 'fonts', 'NotoSansKR-Regular.ttf'),
+    // 1순위: 게임 디렉토리 번들 폰트
     path.join(gameDir, 'fonts', 'NotoSansCJKkr-Regular.otf'),
     path.join(gameDir, 'fonts', 'NotoSansKR-Regular.otf'),
     path.join(gameDir, 'fonts', 'NotoSansKR-Regular.ttf'),
     path.join(gameDir, 'fonts', 'LINESeedKR-Rg.ttf'),
+    path.join(gameRootDir, 'fonts', 'NotoSansCJKkr-Regular.otf'),
+    path.join(gameRootDir, 'fonts', 'NotoSansKR-Regular.otf'),
+    path.join(gameRootDir, 'fonts', 'NotoSansKR-Regular.ttf'),
+
+    // 2순위: 런타임 공유 번들 폰트
+    path.join(runtimeDir, 'fonts', 'NotoSansCJKkr-Regular.otf'),
+    path.join(runtimeDir, 'fonts', 'NotoSansKR-Regular.otf'),
+    path.join(runtimeDir, 'fonts', 'NotoSansKR-Regular.ttf'),
 
     // 2순위: 런처 스크립트가 전달한 포트마스터 동적 홈 경로 ($controlfolder)
     process.env.PORTMASTER_HOME ? path.join(process.env.PORTMASTER_HOME, 'resources', 'NotoSansKR-Regular.otf') : null,
@@ -1031,6 +1063,291 @@ function createFallbackFpsOverlay() {
 }
 
 setupFpsMeter();
+
+// 8. PortMaster gptokeyb 게임패드 충돌 방지 및 Web Gamepad API 격리
+// (gptokeyb가 키보드 입력을 전송할 때 브라우저의 Gamepad API가 이중 입력 및 버튼 충돌(ok vs cancel)을 일으켜 키가 씹히는 현상 원천 차단)
+let origNativeGetGamepads = navigator.getGamepads ? navigator.getGamepads.bind(navigator) : null;
+
+function setupNativeGamepadConflictResolver() {
+  if (userOpt.disableNativeGamepad === false) {
+    console.log('[mkmv-preload] Native Gamepad API active (disableNativeGamepad: false)');
+    return;
+  }
+
+  // 1. Web Gamepad API 격리 (게임 엔진 및 외부 플러그인에 빈 게임패드 목록 반환)
+  try {
+    Object.defineProperty(navigator, 'getGamepads', {
+      configurable: true,
+      enumerable: true,
+      value: function() {
+        return [];
+      }
+    });
+  } catch (e) {
+    try { navigator.getGamepads = () => []; } catch (err) {}
+  }
+
+  // 2. 알만툴 MV / MZ 내장 Input 게임패드 폴러 무력화
+  function patchInputGamepad(inputObj) {
+    if (!inputObj || inputObj._mkmvGamepadNeutralized) return;
+    inputObj._mkmvGamepadNeutralized = true;
+
+    inputObj._pollGamepads = function() {
+      // gptokeyb와의 이중 입력 및 _latestButton 덮어쓰기 방지 (no-op)
+    };
+    if (typeof inputObj._updateGamepadState === 'function') {
+      inputObj._updateGamepadState = function() {};
+    }
+    console.log('[mkmv-preload] Neutralized Input._pollGamepads for gptokeyb harmony');
+  }
+
+  let inputHooked = false;
+  const inputTimer = setInterval(() => {
+    if (window.Input) {
+      patchInputGamepad(window.Input);
+      inputHooked = true;
+      clearInterval(inputTimer);
+    }
+  }, 10);
+  setTimeout(() => clearInterval(inputTimer), 30000);
+
+  console.log('[mkmv-preload] Native Gamepad API isolated successfully (gptokeyb single-source mode)');
+}
+
+setupNativeGamepadConflictResolver();
+
+// 8-2. 키매핑 디버그 오버레이 시스템 (debugKeymap: true 또는 F10 단축키 토글)
+function setupKeymapDebugOverlay() {
+  let isVisible = !!userOpt.debugKeymap;
+  let overlay = null;
+
+  const defaultKeyMapper = {
+    9: 'tab',
+    13: 'ok',
+    16: 'shift',
+    17: 'control',
+    18: 'control',
+    27: 'escape',
+    32: 'ok',
+    33: 'pageup',
+    34: 'pagedown',
+    37: 'left',
+    38: 'up',
+    39: 'right',
+    40: 'down',
+    45: 'escape',
+    81: 'pageup',
+    87: 'pagedown',
+    88: 'escape',
+    90: 'ok',
+    96: 'escape',
+    98: 'down',
+    100: 'left',
+    102: 'right',
+    104: 'up',
+    120: 'debug'
+  };
+
+  function getRpgAction(keyCode) {
+    if (window.Input && window.Input.keyMapper && window.Input.keyMapper[keyCode]) {
+      return window.Input.keyMapper[keyCode];
+    }
+    return defaultKeyMapper[keyCode] || null;
+  }
+
+  const activeKeys = new Map();
+  const history = [];
+  const MAX_HISTORY = 6;
+
+  function render() {
+    if (!overlay || !isVisible) return;
+
+    let html = '<div style="font-weight:bold; color:#00e5ff; font-size:13px; margin-bottom:4px; border-bottom:1px solid rgba(0,229,255,0.4); padding-bottom:3px; display:flex; justify-content:space-between;">' +
+               '<span>🎮 KEYMAP DEBUG</span><span style="color:#aaa; font-size:10px; margin-left:10px;">[F10 Toggle]</span></div>';
+
+    // 현재 누르고 있는 키 상태
+    const activeArr = Array.from(activeKeys.values());
+    if (activeArr.length > 0) {
+      const badges = activeArr.map(item => {
+        const act = item.action ? `:${item.action}` : '';
+        return `<span style="background:#00e5ff; color:#05101a; padding:1px 5px; border-radius:3px; font-weight:bold; margin-right:3px; font-size:11px;">${item.display}${act}</span>`;
+      }).join(' ');
+      html += `<div style="margin-bottom:5px; font-size:11px;"><span style="color:#aaa;">HOLDING:</span> ${badges}</div>`;
+    } else {
+      html += '<div style="margin-bottom:5px; font-size:11px; color:#888;">HOLDING: <span style="color:#666;">(none)</span></div>';
+    }
+
+    // 최근 키 입력 로그 (최신순)
+    html += '<div style="font-size:11px; display:flex; flex-direction:column; gap:2px;">';
+    if (history.length === 0) {
+      html += '<div style="color:#777; font-style:italic;">Waiting for gamepad button / key...</div>';
+    } else {
+      for (const item of history) {
+        const isDown = item.type === 'DOWN';
+        const typeColor = isDown ? '#00ff66' : '#ffaa00';
+        const actionStr = item.action 
+          ? `<span style="color:#00e5ff; font-weight:bold;">➡ "${item.action}"</span>` 
+          : '<span style="color:#777;">➡ (none)</span>';
+        html += `<div><span style="color:${typeColor}; font-weight:bold;">[${item.type}]</span> <span style="color:#ffffff; font-weight:bold;">${item.key}</span> <span style="color:#888;">(code: ${item.code}, which: ${item.keyCode})</span> ${actionStr}</div>`;
+      }
+    }
+    html += '</div>';
+
+    overlay.innerHTML = html;
+  }
+
+  function ensureOverlay() {
+    if (!document.body) return null;
+
+    let isNew = false;
+    if (!overlay) {
+      overlay = document.getElementById('mkmv-keymap-debug');
+    }
+    if (!overlay) {
+      isNew = true;
+      overlay = document.createElement('div');
+      overlay.id = 'mkmv-keymap-debug';
+      overlay.style.setProperty('position', 'absolute', 'important');
+      overlay.style.setProperty('top', userOpt.showFps ? '45px' : '15px', 'important');
+      overlay.style.setProperty('left', '15px', 'important');
+      overlay.style.setProperty('z-index', '2147483647', 'important');
+      overlay.style.setProperty('background-color', '#0b132b', 'important');
+      overlay.style.setProperty('color', '#ffffff', 'important');
+      overlay.style.setProperty('font-family', 'monospace, "Courier New", sans-serif', 'important');
+      overlay.style.setProperty('font-size', '13px', 'important');
+      overlay.style.setProperty('line-height', '1.4', 'important');
+      overlay.style.setProperty('padding', '8px 14px', 'important');
+      overlay.style.setProperty('border-radius', '6px', 'important');
+      overlay.style.setProperty('border', '3px solid #00ffff', 'important');
+      overlay.style.setProperty('box-shadow', '0 0 20px rgba(0, 255, 255, 0.8)', 'important');
+      overlay.style.setProperty('pointer-events', 'none', 'important');
+      overlay.style.setProperty('user-select', 'none', 'important');
+      overlay.style.setProperty('min-width', '280px', 'important');
+      overlay.style.setProperty('max-width', '450px', 'important');
+      overlay.style.setProperty('visibility', 'visible', 'important');
+      overlay.style.setProperty('opacity', '1', 'important');
+      overlay.style.setProperty('transform', 'translateZ(9999px)', 'important');
+      overlay.style.setProperty('will-change', 'transform', 'important');
+    }
+
+    overlay.style.setProperty('display', isVisible ? 'block' : 'none', 'important');
+    if (overlay.parentNode !== document.body || document.body.lastElementChild !== overlay) {
+      document.body.appendChild(overlay);
+      if (isNew) {
+        console.log('[mkmv-overlay] Keymap debug overlay successfully attached to document.body (z-index: 2147483647)');
+      }
+    }
+    render();
+    return overlay;
+  }
+
+  // 초기 및 DOM 완료 시 document.body에 최우선 부착
+  ensureOverlay();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => ensureOverlay());
+  }
+
+  // 알만툴 엔진 캔버스 생성/장면 전환 시 캔버스 뒤로 밀리지 않도록 최상단(lastChild) 유지
+  const attachInterval = setInterval(() => {
+    ensureOverlay();
+  }, 150);
+
+  function recordKey(type, e) {
+    const key = e.key || e.code || 'Unknown';
+    const code = e.code || '-';
+    const keyCode = e.keyCode || e.which || 0;
+    const action = getRpgAction(keyCode);
+
+    console.log(`[mkmv-input] ${type}: key="${key}", code="${code}", keyCode=${keyCode} -> RPG: "${action || 'none'}"`);
+
+    const keyId = `${code}_${keyCode}`;
+    if (type === 'DOWN') {
+      activeKeys.set(keyId, { display: key, code, keyCode, action });
+    } else {
+      activeKeys.delete(keyId);
+    }
+
+    history.unshift({
+      type,
+      key,
+      code,
+      keyCode,
+      action,
+      time: Date.now()
+    });
+    if (history.length > MAX_HISTORY) {
+      history.pop();
+    }
+
+    ensureOverlay();
+  }
+
+  // 물리 패드 하드웨어 상태 감시 (진단용 - origNativeGetGamepads 사용)
+  let lastPadState = '';
+  setInterval(() => {
+    if (!isVisible || !origNativeGetGamepads) return;
+    try {
+      const pads = origNativeGetGamepads();
+      for (let i = 0; i < pads.length; i++) {
+        const pad = pads[i];
+        if (!pad) continue;
+        const pressed = [];
+        for (let b = 0; b < pad.buttons.length; b++) {
+          if (pad.buttons[b].pressed || pad.buttons[b].value > 0.5) {
+            pressed.push(b);
+          }
+        }
+        if (pressed.length > 0) {
+          const stateStr = `pad${i}_btn[${pressed.join(',')}]`;
+          if (stateStr !== lastPadState) {
+            lastPadState = stateStr;
+            console.log(`[mkmv-gamepad] Hardware Gamepad #${i} (${pad.id}): Pressed buttons: ${pressed.join(', ')}`);
+          }
+        }
+      }
+    } catch (e) {}
+  }, 100);
+
+  const handleKeydown = (e) => {
+    if (e._mkmvHandled) return;
+    e._mkmvHandled = true;
+    const key = e.key ? e.key.toUpperCase() : '';
+    if (key === 'F10' || e.code === 'F10' || e.keyCode === 121) {
+      isVisible = !isVisible;
+      const el = ensureOverlay();
+      if (el) {
+        el.style.setProperty('display', isVisible ? 'block' : 'none', 'important');
+        if (isVisible) render();
+      }
+      console.log(`[mkmv-preload] Keymap debug overlay visibility toggled: ${isVisible}`);
+      e.preventDefault();
+      return;
+    }
+    recordKey('DOWN', e);
+  };
+
+  const handleKeyup = (e) => {
+    if (e._mkmvHandled) return;
+    e._mkmvHandled = true;
+    const key = e.key ? e.key.toUpperCase() : '';
+    if (key === 'F10' || e.code === 'F10' || e.keyCode === 121) {
+      e.preventDefault();
+      return;
+    }
+    recordKey('UP', e);
+  };
+
+  // 최상위 window에만 캡처 리스너 1회 등록 (이벤트 전파 중복 방지)
+  window.addEventListener('keydown', handleKeydown, { capture: true, passive: false });
+  window.addEventListener('keyup', handleKeyup, { capture: true, passive: false });
+
+  if (isVisible) {
+    console.log('[mkmv-preload] Keymap debug overlay enabled via config (debugKeymap: true)');
+    ensureOverlay();
+  }
+}
+
+setupKeymapDebugOverlay();
 
 // 9. 고속 배속(Fast-Forward / 터보) 시스템 (R3 버튼 또는 R/Tab 키로 토글)
 function setupFastForward() {
