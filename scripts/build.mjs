@@ -115,8 +115,8 @@ async function build() {
     }
   }
 
-  // Copy template directories if exist (fonts, conf, share, lib)
-  const templateDirs = ['fonts', 'conf', 'share', 'lib'];
+  // Copy template directories if exist (fonts, conf, share, lib, modules)
+  const templateDirs = ['fonts', 'conf', 'share', 'lib', 'modules'];
   for (const dirName of templateDirs) {
     const srcDir = path.join(TEMPLATE_DIR, dirName);
     const destDir = path.join(DIST_PORTABLE_APP_DIR, dirName);
