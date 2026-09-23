@@ -98,12 +98,16 @@ function setupBitmapGuard() {
           }
         };
 
-        // getPixel / getAlphaPixel 부동소수점/NaN/범위초과 가드 (플러그인 충돌 방지)
+        // getPixel / getAlphaPixel 부동소수점/NaN/범위초과 가드 (플러그인 충돌 방지 및 MZ context 호환)
         const origGetPixel = window.Bitmap.prototype.getPixel;
         window.Bitmap.prototype.getPixel = function(x, y) {
           x = Math.floor(Number(x));
           y = Math.floor(Number(y));
-          if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || !this.width || !this.height || x >= this.width || y >= this.height || !this._context) {
+          if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || !this.width || !this.height || x >= this.width || y >= this.height) {
+            return '#000000';
+          }
+          const ctx = this.context || this._context;
+          if (!ctx) {
             return '#000000';
           }
           try {
@@ -117,7 +121,11 @@ function setupBitmapGuard() {
         window.Bitmap.prototype.getAlphaPixel = function(x, y) {
           x = Math.floor(Number(x));
           y = Math.floor(Number(y));
-          if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || !this.width || !this.height || x >= this.width || y >= this.height || !this._context) {
+          if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || !this.width || !this.height || x >= this.width || y >= this.height) {
+            return 0;
+          }
+          const ctx = this.context || this._context;
+          if (!ctx) {
             return 0;
           }
           try {
@@ -460,5 +468,6 @@ function setupImageLoader(options = {}) {
 
 module.exports = {
   setupImageLoader,
-  setupCanvasMeshCompatibility
+  setupCanvasMeshCompatibility,
+  setupBitmapGuard
 };
