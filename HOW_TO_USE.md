@@ -27,7 +27,7 @@ roms/ports/ (또는 ports/)
     ├── mkmv.json                      # 게임별 맞춤 설정 (해상도, 배속, 메모리 등)
     ├── keymap.gptk                    # (선택) 특수 조작이 필요한 게임만 개별 오버라이드
     ├── log.txt                        # 게임별 독립 실행 로그
-    └── game/ (또는 www/)              # 순수 게임 데이터 (index.html, js, img, audio...)
+    └── game/                          # 순수 게임 데이터 (index.html, js, img, audio...) *기존 www/도 하위 호환
 ```
 
 ### 🚀 새 게임 추가하는 방법 (딱 3단계)
@@ -43,12 +43,12 @@ roms/ports/ (또는 ports/)
 
 > 💡 **스마트 자동 매칭**: 런처 스크립트(`.sh`)가 파일명과 동일한 폴더를 자동으로 찾아서 연결하므로 스크립트 내부를 수정할 필요가 전혀 없습니다!
 
-#### 3단계. 게임 데이터 넣기
-엔진 종류에 따라 게임 폴더 안에 게임 에셋을 넣습니다:
-- **RPG Maker MV 게임**: 게임 배포본의 **`www` 내용물**을 `RJ00000000/www/` (또는 `game/`)에 넣습니다.
-- **RPG Maker MZ 게임**: 게임 배포본의 **루트 내용물**(`index.html`, `js/rmmz_*.js` 등)을 `RJ00000000/game/`에 넣습니다.
+#### 3단계. 게임 데이터 넣기 (공통)
+엔진 종류(MV/MZ)에 상관없이 **`index.html`이 있는 내용물을 `RJ00000000/game/` 폴더에 넣으면 끝**입니다!
+- **RPG Maker MV 게임**: 배포본의 **`www` 폴더 내용물**을 `game/`에 넣습니다.
+- **RPG Maker MZ 게임**: 배포본 루트의 **내용물**(`index.html`, `js/`, `data/` 등)을 `game/`에 넣습니다.
 
-이제 기기를 켜고 **Ports** 메뉴에서 `RJ00000000`을 실행하면 끝납니다!
+> 💡 **레거시 하위 호환**: 기존 사용자 환경에서 이미 `www/` 폴더에 설치해둔 게임도 자동으로 감지하여 완벽하게 호환 작동합니다.
 
 ---
 
@@ -64,18 +64,18 @@ roms/ports/
 └── MyGame/                            # 독립 게임 폴더
     ├── electron, lib/, conf/, fonts/...
     ├── mkmv.json
-    └── www/ (또는 game/)
+    └── game/ (또는 www/)
 ```
 
 1. `mkmv.sh`를 복사하여 **`MyGame.sh`** 로 변경
 2. `mkmv` 폴더를 복사하여 **`MyGame`** 으로 변경
-3. `MyGame/www/` 안에 게임 에셋을 넣고 실행
+3. `MyGame/game/` 안에 게임 에셋을 넣고 실행 (기존 `www/`도 호환)
 
 ---
 
 ## ⚙️ 게임별 맞춤 설정 (`mkmv.json`)
 
-각 게임 폴더 안에 있는 `mkmv.json`을 열어 해상도, 배속, 프레임 레이트, 메모리 절약 모드 등을 게임별로 다르게 세팅할 수 있습니다:
+각 게임 폴더 안에 있는 `mkmv.json`을 열어 해상도, 배속, 프레임 레이트, 메모리 절약 모드, 엔진 강제 지정 등을 게임별로 다르게 세팅할 수 있습니다:
 
 ```json
 {
@@ -93,10 +93,15 @@ roms/ports/
   "disableNativeGamepad": true,
   "fastForward": true,
   "fastForwardSpeed": 2,
-  "performanceProfile": "auto"
+  "performanceProfile": "auto",
+  "engineVersion": "auto"
 }
 ```
 
+* `"engineVersion": "auto"` : 게임 엔진 감지 및 강제 모드 설정 (`"auto"`, `"mv"`, `"mz"`)
+  - `"auto"` (기본값): 코어 스크립트(`rmmz_core.js` 등)를 검사하여 MV/MZ를 자동 식별
+  - `"mv"`: 알만툴 MV 엔진 모드로 강제 고정
+  - `"mz"`: 알만툴 MZ 엔진 모드로 강제 고정 (스크립트 난독화 또는 패킹으로 인해 자동 감지가 실패할 때 안전장치로 사용)
 * `"performanceProfile": "auto"` : 기기 사양 및 발열 환경에 따른 렌더링/메모리 프로파일 구성 (`"auto"`, `"high"`, `"medium"`, `"low"`)
   - `"high"` (Ayn Odin 2/3 등 액티브 쿨링팬 탑재 6GB+ 퀄컴/플래그십 기기): 하드웨어 WebGL 가속 활성화, 512MB V8 힙, 60초 주기 유휴 GC, 풀 캐시 적용
   - `"medium"` (RG VITA PRO, RK3576, RK3566 등 1.5GB ~ 4GB 패시브 쿨링 기기 권장 ⭐): 하드웨어 WebGL 가속 활성화, 384MB V8 힙, 45초 주기 유휴 GC, 단일 렌더러 프로세스 제한으로 밀폐형 기기에서도 발열 셧다운 없이 60 FPS 안정 구동

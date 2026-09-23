@@ -97,7 +97,8 @@ function loadConfig(runtimeDir, gameRootDir) {
     disableNativeGamepad: true,
     fastForward: true,
     fastForwardSpeed: 2,
-    performanceProfile: 'auto'
+    performanceProfile: 'auto',
+    engineVersion: 'auto'
   };
 
   const rawRuntimeConfig = readJsonFile(path.join(runtimeDir, 'mkmv.json'))
@@ -136,9 +137,35 @@ function loadConfig(runtimeDir, gameRootDir) {
   return finalConfig;
 }
 
+function resolveEffectiveEngine(engineVersion, gameDir, existsSyncFn = fs.existsSync) {
+  const normalized = (typeof engineVersion === 'string' ? engineVersion.toLowerCase().trim() : '') || 'auto';
+  if (normalized === 'mz') {
+    return { engine: 'mz', isMZ: true, mode: 'manual' };
+  }
+  if (normalized === 'mv') {
+    return { engine: 'mv', isMZ: false, mode: 'manual' };
+  }
+
+  // 'auto' or unspecified: detect engine by core files
+  let isMZ = false;
+  if (gameDir) {
+    try {
+      const mzCore = path.join(gameDir, 'js', 'rmmz_core.js');
+      const mzManagers = path.join(gameDir, 'js', 'rmmz_managers.js');
+      if (existsSyncFn(mzCore) || existsSyncFn(mzManagers)) {
+        isMZ = true;
+      }
+    } catch (e) {}
+  }
+
+  return { engine: isMZ ? 'mz' : 'mv', isMZ, mode: 'auto' };
+}
+
 module.exports = {
   loadConfig,
   detectHardwareProfile,
   resolveEffectiveProfile,
+  resolveEffectiveEngine,
   PROFILE_DEFAULTS
 };
+

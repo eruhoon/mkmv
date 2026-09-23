@@ -21,7 +21,7 @@ An all-in-one universal runner and shared runtime architecture for seamlessly la
 * **Sleep/Resume Audio Recovery**: Automatic WebAudio context recovery ensures sound never freezes after device sleep or standby.
 * **Universal CJK Fallback Fonts**: Bundled `Noto Sans CJK KR` auto-injection eliminates missing Korean/Japanese glyphs and tofu (□) characters.
 * **Dynamic Performance Profiles & Hardware GPU Acceleration**: Auto-detects device RAM and hardware capability (`auto`, `high`, `medium`, `low`). Automatically activates Mali-G52 hardware WebGL acceleration and balanced V8 heap on capable devices (RG Vita Pro / RK3576), with intelligent thermal CPU frequency capping to prevent overheating on passively cooled handhelds, while maintaining lightweight 128MB low-memory protection and CPU rendering for budget 1GB devices.
-* **Dual Engine Support**: Separate isolated layouts and hooks supporting both RPG Maker MV (`www/`) and RPG Maker MZ (`game/`).
+* **Dual Engine Support & Unified `game/` Directory**: Seamless execution and hooks supporting both RPG Maker MV and RPG Maker MZ directly inside a single unified `game/` directory (with automatic engine detection and legacy `www/` backwards compatibility).
 
 ---
 
@@ -32,12 +32,12 @@ Download the latest release from the [Releases](https://github.com/eruhoon/mkmv/
 ### Option 1: Shared Runtime (Recommended for Multiple Games)
 1. Download **`mkmv-runtime-v*.zip`** and extract the **`mkmv-runtime`** folder into `roms/ports/` on your SD card.
 2. Unzip `mkmv-runtime/template.zip` and rename the extracted `game.sh` and `game` folder to your game's name (e.g. `RJ00000000.sh` and `RJ00000000`).
-3. Place your game files into `RJ00000000/game/` (or `www/`) and launch from the Ports menu!
+3. Place your game files into `RJ00000000/game/` and launch from the Ports menu!
 
 ### Option 2: Portable Package (Single Game)
 1. Download **`mkmv-portable-v*.zip`**.
 2. Copy `mkmv.sh` and `mkmv` folder into `roms/ports/`.
-3. Place your game assets into `mkmv/www/` and launch!
+3. Place your game assets into `mkmv/game/` and launch!
 
 > 📖 For detailed game duplication, multi-game setup, and advanced config options, see **[HOW_TO_USE.md](HOW_TO_USE.md)**.
 

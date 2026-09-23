@@ -2,7 +2,13 @@ const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { loadConfig, detectHardwareProfile, resolveEffectiveProfile, PROFILE_DEFAULTS } = require('../../template/modules/config.js');
+const {
+  loadConfig,
+  detectHardwareProfile,
+  resolveEffectiveProfile,
+  resolveEffectiveEngine,
+  PROFILE_DEFAULTS
+} = require('../../template/modules/config.js');
 
 console.log('[test] Testing config module...');
 
@@ -25,6 +31,12 @@ assert.strictEqual(resolveEffectiveProfile({ performanceProfile: 'low' }), 'low'
 assert.strictEqual(resolveEffectiveProfile({ lowMemoryMode: true }), 'low');
 assert.strictEqual(resolveEffectiveProfile({ lowMemoryMode: false }), 'high');
 
+// 2-1. Test resolveEffectiveEngine
+assert.deepStrictEqual(resolveEffectiveEngine('mz'), { engine: 'mz', isMZ: true, mode: 'manual' });
+assert.deepStrictEqual(resolveEffectiveEngine('mv'), { engine: 'mv', isMZ: false, mode: 'manual' });
+assert.deepStrictEqual(resolveEffectiveEngine('MZ'), { engine: 'mz', isMZ: true, mode: 'manual' });
+assert.deepStrictEqual(resolveEffectiveEngine('MV'), { engine: 'mv', isMZ: false, mode: 'manual' });
+
 // 3. Test loadConfig with mock directories
 const tempDir = path.join(__dirname, 'temp_test_config');
 fs.mkdirSync(tempDir, { recursive: true });
@@ -39,6 +51,7 @@ try {
   const config = loadConfig(tempDir, tempDir);
   assert.strictEqual(config.performanceProfile, 'high');
   assert.strictEqual(config.effectiveProfile, 'high');
+  assert.strictEqual(config.engineVersion, 'auto');
   assert.strictEqual(config.disableGpu, false);
   assert.strictEqual(config.maxOldSpaceSize, 512);
   assert.strictEqual(config.lowMemoryMode, false);
@@ -50,16 +63,32 @@ try {
   fs.writeFileSync(path.join(gameDir, 'mkmv.json'), JSON.stringify({
     performanceProfile: 'low',
     disableGpu: true,
-    maxOldSpaceSize: 256
+    maxOldSpaceSize: 256,
+    engineVersion: 'mz'
   }));
 
   const gameConfig = loadConfig(tempDir, gameDir);
   assert.strictEqual(gameConfig.performanceProfile, 'low');
   assert.strictEqual(gameConfig.effectiveProfile, 'low');
+  assert.strictEqual(gameConfig.engineVersion, 'mz');
   assert.strictEqual(gameConfig.disableGpu, true);
   assert.strictEqual(gameConfig.maxOldSpaceSize, 256); // explicit override
   assert.strictEqual(gameConfig.lowMemoryMode, true);
   assert.strictEqual(gameConfig.fastForwardSpeed, 3); // inherited from runtime
+
+  // Test auto-detection with mock MZ files
+  const mzGameDir = path.join(tempDir, 'mz_game');
+  fs.mkdirSync(path.join(mzGameDir, 'js'), { recursive: true });
+  fs.writeFileSync(path.join(mzGameDir, 'js', 'rmmz_core.js'), '// MZ');
+  const mzDetected = resolveEffectiveEngine('auto', mzGameDir);
+  assert.deepStrictEqual(mzDetected, { engine: 'mz', isMZ: true, mode: 'auto' });
+
+  // Test auto-detection fallback with empty/MV files
+  const mvGameDir = path.join(tempDir, 'mv_game');
+  fs.mkdirSync(path.join(mvGameDir, 'js'), { recursive: true });
+  fs.writeFileSync(path.join(mvGameDir, 'js', 'rpg_core.js'), '// MV');
+  const mvDetected = resolveEffectiveEngine('auto', mvGameDir);
+  assert.deepStrictEqual(mvDetected, { engine: 'mv', isMZ: false, mode: 'auto' });
 
   console.log('[test] All config module tests passed successfully!');
 } finally {

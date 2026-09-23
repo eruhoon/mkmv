@@ -178,11 +178,11 @@ async function build() {
   fs.cpSync(DIST_PORTABLE_APP_DIR, DIST_RUNTIME_APP_DIR, { recursive: true });
   fs.writeFileSync(path.join(DIST_RUNTIME_APP_DIR, 'template.zip'), templateZipBuffer);
 
-  // 8. Prepare Portable App Directory (mkmv with www/save)
-  const wwwDir = path.join(DIST_PORTABLE_APP_DIR, 'www');
-  const saveDir = path.join(wwwDir, 'save');
+  // 8. Prepare Portable App Directory (mkmv with game/save)
+  const gameDir = path.join(DIST_PORTABLE_APP_DIR, 'game');
+  const saveDir = path.join(gameDir, 'save');
   fs.mkdirSync(saveDir, { recursive: true });
-  fs.writeFileSync(path.join(wwwDir, '.gitkeep'), '');
+  fs.writeFileSync(path.join(gameDir, '.gitkeep'), '');
   fs.writeFileSync(path.join(saveDir, '.gitkeep'), '');
 
   // 9. Create Artifact 1: Runtime Package (mkmv-runtime-v*.zip)

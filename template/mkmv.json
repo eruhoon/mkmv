@@ -13,5 +13,6 @@
   "disableNativeGamepad": true,
   "fastForward": true,
   "fastForwardSpeed": 2,
-  "performanceProfile": "auto"
+  "performanceProfile": "auto",
+  "engineVersion": "auto"
 }

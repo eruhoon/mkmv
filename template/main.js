@@ -121,7 +121,7 @@ for (const arg of process.argv) {
 }
 
 // The same configuration resolver is used by preload.
-const { loadConfig } = require(path.join(__dirname, 'modules', 'config.js'));
+const { loadConfig, resolveEffectiveEngine } = require(path.join(__dirname, 'modules', 'config.js'));
 const opt = loadConfig(runtimeDir, gameRootDir);
 console.log('[mkmv] Effective performance settings:', JSON.stringify({
   performanceProfile: opt.effectiveProfile,
@@ -131,7 +131,7 @@ console.log('[mkmv] Effective performance settings:', JSON.stringify({
   disableGpu: opt.disableGpu
 }));
 
-// 알만툴 MV / MZ 게임 디렉토리 격리 감지 (game/ 우선, 그 다음 www/, 최후 폴백으로 루트)
+// 알만툴 MV / MZ 게임 디렉토리 격리 감지 (game/ 우선, 그 다음 www/, 최후 폴백으로 game/)
 function detectGameDirectory(baseDir) {
   if (opt.gameDir) {
     const custom = path.resolve(baseDir, opt.gameDir);
@@ -149,14 +149,15 @@ function detectGameDirectory(baseDir) {
   if (fs.existsSync(path.join(baseDir, 'index.html'))) {
     return baseDir;
   }
-  return path.join(baseDir, 'www'); // 기본값
+  return path.join(baseDir, 'game'); // 기본값
 }
 
 const gameDir = detectGameDirectory(gameRootDir);
-const isMZ = fs.existsSync(path.join(gameDir, 'js', 'rmmz_core.js'));
+const engineInfo = resolveEffectiveEngine(opt.engineVersion, gameDir, fs.existsSync);
+const isMZ = engineInfo.isMZ;
 console.log(`[mkmv] Runtime Directory: ${runtimeDir}`);
 console.log(`[mkmv] Game Root Directory: ${gameRootDir}`);
-console.log(`[mkmv] Detected Game Engine: ${isMZ ? 'RPG Maker MZ' : 'RPG Maker MV'}, Directory: ${gameDir}`);
+console.log(`[mkmv] Detected Game Engine: ${isMZ ? 'RPG Maker MZ' : 'RPG Maker MV'} (mode: ${engineInfo.mode}), Directory: ${gameDir}`);
 
 try {
   process.chdir(gameDir);

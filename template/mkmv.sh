@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # RPG Maker MV - PortMaster Official Universal Launcher Script
-# Version: 0.3.0
+# Version: 0.3.1
 # ==============================================================================
 
 # ⭐ [설정] 기본 게임 폴더명 (폴더명을 바꾸셨다면 아래 이름을 일치시켜 주세요)
@@ -126,7 +126,7 @@ trap cleanup EXIT INT TERM
 
 CONF_DIR="$GAME_ROOT/conf"
 mkdir -p "$CONF_DIR"
-mkdir -p "$GAME_ROOT/www/save" "$GAME_ROOT/game/save" "$GAME_ROOT/save"
+mkdir -p "$GAME_ROOT/game/save" "$GAME_ROOT/www/save" "$GAME_ROOT/save"
 
 # Enable logging (게임 디렉토리 내에 독립적으로 기록)
 > "$GAME_ROOT/log.txt" && exec > >(tee "$GAME_ROOT/log.txt") 2>&1
@@ -211,7 +211,7 @@ cd "$GAME_ROOT"
 chmod +x "$RUNTIME_DIR/electron" 2>/dev/null
 chmod +x "$RUNTIME_DIR/gptokeyb" "$GAME_ROOT/gptokeyb" 2>/dev/null
 chmod -R +r "$RUNTIME_DIR/lib" "$RUNTIME_DIR/conf" "$RUNTIME_DIR/share" 2>/dev/null
-chmod -R +r "$GAME_ROOT/conf" "$GAME_ROOT/www" "$GAME_ROOT/game" 2>/dev/null
+chmod -R +r "$GAME_ROOT/conf" "$GAME_ROOT/game" "$GAME_ROOT/www" 2>/dev/null
 
 # GPTK 실행 및 프로세스 바인딩 (게임별 키맵 우선, 없으면 런타임 공용 기본 키맵)
 if [ -f "$GAME_ROOT/keymap.gptk" ]; then
