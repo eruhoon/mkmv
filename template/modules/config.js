@@ -32,16 +32,22 @@ const PROFILE_DEFAULTS = {
   }
 };
 
-function detectHardwareProfile() {
+function detectHardwareProfile(customTotalMemMB) {
   try {
-    const totalMemBytes = os.totalmem();
-    const totalMemMB = totalMemBytes / (1024 * 1024);
-    if (totalMemMB >= 2500) {
-      return 'high'; // 3GB+ or 4GB devices (RG Vita Pro, RK3576, RK3588)
+    const totalMemMB = typeof customTotalMemMB === 'number'
+      ? customTotalMemMB
+      : os.totalmem() / (1024 * 1024);
+
+    if (totalMemMB >= 5500) {
+      // 6GB+ or 8GB+ flagship devices with active cooling (Ayn Odin 2/3, Qualcomm Snapdragon, PC)
+      return 'high';
     } else if (totalMemMB >= 1500) {
-      return 'medium'; // 2GB devices
+      // 2GB ~ 4GB passively cooled devices (RG Vita Pro, RK3576, RK3566)
+      // Passive cooling handhelds overheat under 'high'; 'medium' maintains 60 FPS while keeping SoC cool
+      return 'medium';
     } else {
-      return 'low'; // 1GB devices (RK3326, H700, RG35XX)
+      // 1GB devices (RK3326, H700, RG35XX)
+      return 'low';
     }
   } catch (e) {
     return 'medium';

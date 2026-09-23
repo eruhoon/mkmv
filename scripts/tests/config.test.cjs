@@ -12,6 +12,12 @@ console.log(`[test] Hardware profile detected: ${detected} (total memory: ${Math
 assert(['high', 'medium', 'low'].includes(detected), 'Detected profile must be high, medium, or low');
 assert.ok(PROFILE_DEFAULTS.high && PROFILE_DEFAULTS.medium && PROFILE_DEFAULTS.low, 'PROFILE_DEFAULTS must define high, medium, and low');
 
+// Test memory thresholds for passive vs active cooling devices
+assert.strictEqual(detectHardwareProfile(8192), 'high', '8GB active cooling device (Odin 2/3) should be high');
+assert.strictEqual(detectHardwareProfile(3924), 'medium', '4GB passive device (RG Vita Pro) should be medium to prevent overheating');
+assert.strictEqual(detectHardwareProfile(2048), 'medium', '2GB device should be medium');
+assert.strictEqual(detectHardwareProfile(1024), 'low', '1GB device (RG35XX/H700) should be low');
+
 // 2. Test resolveEffectiveProfile
 assert.strictEqual(resolveEffectiveProfile({ performanceProfile: 'high' }), 'high');
 assert.strictEqual(resolveEffectiveProfile({ performanceProfile: 'medium' }), 'medium');
