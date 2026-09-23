@@ -10,6 +10,7 @@ console.log('[test] Testing config module...');
 const detected = detectHardwareProfile();
 console.log(`[test] Hardware profile detected: ${detected} (total memory: ${Math.round(os.totalmem() / 1024 / 1024)}MB)`);
 assert(['high', 'medium', 'low'].includes(detected), 'Detected profile must be high, medium, or low');
+assert.ok(PROFILE_DEFAULTS.high && PROFILE_DEFAULTS.medium && PROFILE_DEFAULTS.low, 'PROFILE_DEFAULTS must define high, medium, and low');
 
 // 2. Test resolveEffectiveProfile
 assert.strictEqual(resolveEffectiveProfile({ performanceProfile: 'high' }), 'high');

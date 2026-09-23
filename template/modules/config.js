@@ -103,10 +103,6 @@ function loadConfig(runtimeDir, gameRootDir) {
     rawGameConfig = readJsonFile(path.join(gameRootDir, 'mkmv.json'))
       || readJsonFile(path.join(gameRootDir, 'config.json'))
       || {};
-  } else {
-    rawGameConfig = readJsonFile(path.join(runtimeDir, 'mkmv.json'))
-      || readJsonFile(path.join(runtimeDir, 'config.json'))
-      || {};
   }
 
   // Combined explicit user options (game config overrides runtime config)

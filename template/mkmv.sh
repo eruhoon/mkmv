@@ -90,6 +90,7 @@ else
 fi
 
 SWAP_ACTIVE=0
+ORIG_SCALING_FREQS=()
 
 cleanup() {
   echo "Cleaning up runtime environment..."
@@ -280,7 +281,6 @@ chmod +x "$RUNNER" 2>/dev/null
 # 발열 방지 클럭 상한선(Thermal Cap) 적용
 # RK3576 빅코어(cpu4-7)가 2.2GHz 풀클럭으로 구동 시 패시브 쿨링 기기에서 패키지 온도가 83°C에 도달하여 전원 차단이 발생합니다.
 # 2D 알만툴 구동에는 1.6GHz로도 60fps가 충분하므로 안전 상한선(1.6GHz)을 적용합니다.
-ORIG_SCALING_FREQS=()
 TARGET_MAX_FREQ="${MKMV_MAX_FREQ:-1608000}"
 
 CONF_FILE="$GAME_ROOT/mkmv.json"
