@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, screen, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { createLogger, setLogLevel } = require(path.join(__dirname, 'modules', 'logger.js'));
+const logger = createLogger('mkmv');
 
 // Linux ext4 파일시스템 대소문자 불일치 404 방지 캐시 및 실시간 탐색기
 const dirCache = new Map();
@@ -123,7 +125,7 @@ for (const arg of process.argv) {
 // The same configuration resolver is used by preload.
 const { loadConfig, resolveEffectiveEngine } = require(path.join(__dirname, 'modules', 'config.js'));
 const opt = loadConfig(runtimeDir, gameRootDir);
-console.log('[mkmv] Effective performance settings:', JSON.stringify({
+logger.info('Effective performance settings:', JSON.stringify({
   performanceProfile: opt.effectiveProfile,
   lowMemoryMode: opt.lowMemoryMode,
   maxOldSpaceSize: opt.maxOldSpaceSize,
@@ -155,9 +157,9 @@ function detectGameDirectory(baseDir) {
 const gameDir = detectGameDirectory(gameRootDir);
 const engineInfo = resolveEffectiveEngine(opt.engineVersion, gameDir, fs.existsSync);
 const isMZ = engineInfo.isMZ;
-console.log(`[mkmv] Runtime Directory: ${runtimeDir}`);
-console.log(`[mkmv] Game Root Directory: ${gameRootDir}`);
-console.log(`[mkmv] Detected Game Engine: ${isMZ ? 'RPG Maker MZ' : 'RPG Maker MV'} (mode: ${engineInfo.mode}), Directory: ${gameDir}`);
+logger.info(`Runtime Directory: ${runtimeDir}`);
+logger.info(`Game Root Directory: ${gameRootDir}`);
+logger.info(`Detected Game Engine: ${isMZ ? 'RPG Maker MZ' : 'RPG Maker MV'} (mode: ${engineInfo.mode}), Directory: ${gameDir}`);
 
 try {
   process.chdir(gameDir);
@@ -165,7 +167,7 @@ try {
 
 // V8 힙 제한 및 메모리 최적화
 const maxHeap = Number(opt.maxOldSpaceSize) || (opt.lowMemoryMode ? 128 : 512);
-console.log(`[mkmv] Memory configuration: maxOldSpaceSize=${maxHeap}MB, lowMemoryMode=${opt.lowMemoryMode !== false}`);
+logger.info(`Memory configuration: maxOldSpaceSize=${maxHeap}MB, lowMemoryMode=${opt.lowMemoryMode !== false}`);
 app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${maxHeap} --expose-gc`);
 
 if (opt.lowMemoryMode) {
@@ -230,17 +232,17 @@ function createWindow() {
   if (opt.autoDetectResolution !== false) {
     try {
       const primaryDisplay = screen.getPrimaryDisplay();
-      console.log('[mkmv] Detected primaryDisplay:', JSON.stringify(primaryDisplay ? primaryDisplay.bounds : null));
+      logger.debug('Detected primaryDisplay:', JSON.stringify(primaryDisplay ? primaryDisplay.bounds : null));
       if (primaryDisplay && primaryDisplay.bounds && primaryDisplay.bounds.width > 0 && primaryDisplay.bounds.height > 0) {
         winWidth = primaryDisplay.bounds.width;
         winHeight = primaryDisplay.bounds.height;
       }
     } catch (e) {
-      console.warn('[mkmv] Failed to get display bounds, using fallback:', e);
+      logger.warn('Failed to get display bounds, using fallback:', e);
     }
   }
 
-  console.log(`[mkmv] Creating BrowserWindow: ${winWidth}x${winHeight}, fullscreen=${opt.fullscreen !== false}`);
+  logger.info(`Creating BrowserWindow: ${winWidth}x${winHeight}, fullscreen=${opt.fullscreen !== false}`);
 
   const win = new BrowserWindow({
     width: winWidth,
@@ -266,7 +268,7 @@ function createWindow() {
   win.setResizable(false);
   try { win.setMovable(false); } catch (e) {}
   win.on('will-resize', (e) => {
-    console.log('[mkmv] Blocked renderer will-resize event');
+    logger.debug('Blocked renderer will-resize event');
     e.preventDefault();
   });
 
@@ -278,7 +280,7 @@ function createWindow() {
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown') {
       const key = input.key ? input.key.toUpperCase() : '';
-      console.log(`[mkmv-main-input] keyDown: key="${input.key}", code="${input.code}"`);
+      logger.verbose(`keyDown: key="${input.key}", code="${input.code}"`);
       if (key === 'F4' || key === 'F5' || (input.control && key === 'R')) {
         event.preventDefault();
       }
@@ -286,28 +288,28 @@ function createWindow() {
   });
 
   const indexPath = path.join(gameDir, 'index.html');
-  console.log('[mkmv] Loading game file:', indexPath);
+  logger.info('Loading game file:', indexPath);
   win.loadFile(indexPath);
 
   win.webContents.on('did-finish-load', () => {
     try {
       win.webContents.setZoomFactor(opt.forceDeviceScaleFactor || 1);
     } catch (e) {}
-    console.log('[mkmv] Content loaded, focusing window');
+    logger.info('Content loaded, focusing window');
     win.focus();
     win.webContents.focus();
   });
 
   win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-    console.error(`[mkmv] did-fail-load: ${errorCode} (${errorDescription}) on ${validatedURL}`);
+    logger.error(`did-fail-load: ${errorCode} (${errorDescription}) on ${validatedURL}`);
   });
 
   win.webContents.on('render-process-gone', (event, details) => {
-    console.error(`[mkmv] Render process gone! Reason: ${details.reason}, ExitCode: ${details.exitCode}`);
+    logger.error(`Render process gone! Reason: ${details.reason}, ExitCode: ${details.exitCode}`);
   });
 
   win.webContents.on('plugin-crashed', (event, name, version) => {
-    console.error(`[mkmv] Plugin crashed: ${name} v${version}`);
+    logger.error(`Plugin crashed: ${name} v${version}`);
   });
 
   win.on('closed', () => {
@@ -329,9 +331,10 @@ app.whenReady().then(() => {
         pathname = pathname.slice(1);
       }
       const resolved = resolveCaseInsensitive(pathname, gameDir);
+      logger.verbose(`interceptFile: "${pathname}" -> "${resolved}"`);
       callback({ path: resolved });
     } catch (e) {
-      console.error(`[mkmv-protocol-error] URL: ${request.url}`, e);
+      logger.error(`[mkmv-protocol-error] URL: ${request.url}`, e);
       callback({ error: -6 }); // net::ERR_FILE_NOT_FOUND
     }
   });

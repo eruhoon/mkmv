@@ -13,6 +13,8 @@
 
 const path = require('path');
 const fs = require('fs');
+const { createLogger } = require('./logger.js');
+const logger = createLogger('mkmv-font');
 
 function setupFallbackFont(options = {}) {
   const {
@@ -52,7 +54,7 @@ function setupFallbackFont(options = {}) {
 
   const fontPath = possiblePaths.find(p => origExistsSync.call(fs, p));
   if (!fontPath) {
-    console.log('[mkmv-font] No fallback CJK font file found');
+    logger.debug('No fallback CJK font file found');
     return;
   }
 
@@ -87,14 +89,14 @@ function setupFallbackFont(options = {}) {
           face.load().then(loadedFace => {
             document.fonts.add(loadedFace);
           }).catch(err => {
-            console.warn(`[mkmv-font] Failed to load FontFace ${family}:`, err);
+            logger.warn(`Failed to load FontFace ${family}:`, err);
           });
         } catch (err) {}
       });
 
-      console.log(`[mkmv-font] Successfully registered fallback font (${path.basename(fontPath)}) as ${fontFamilies.join(', ')}`);
+      logger.info(`Successfully registered fallback font (${path.basename(fontPath)}) as ${fontFamilies.join(', ')}`);
     } catch (e) {
-      console.warn('[mkmv-font] Error reading fallback font file:', e);
+      logger.warn('Error reading fallback font file:', e);
     }
   }
 
@@ -150,7 +152,7 @@ function patchFontReady() {
   }
   if (window.FontManager) {
     window.FontManager.throwLoadError = function(family) {
-      console.warn(`[mkmv-font] Suppressed FontManager LoadError for ${family}`);
+      logger.warn(`Suppressed FontManager LoadError for ${family}`);
     };
   }
 }

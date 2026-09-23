@@ -5,16 +5,18 @@
  * 각 기능별 모듈을 로드하고 게임 환경을 순차적으로 초기화합니다.
  */
 
-console.log('[mkmv-preload] Preload script initializing...');
-process.on('uncaughtException', (err) => {
-  console.error('[mkmv-preload uncaughtException]', err && err.stack ? err.stack : err);
-});
-process.on('unhandledRejection', (reason) => {
-  console.error('[mkmv-preload unhandledRejection]', reason);
-});
-
 const path = require('path');
 const fs = require('fs');
+const { createLogger, setLogLevel } = require(path.join(__dirname, 'modules', 'logger.js'));
+const logger = createLogger('mkmv-preload');
+
+logger.info('Preload script initializing...');
+process.on('uncaughtException', (err) => {
+  logger.error('uncaughtException', err && err.stack ? err.stack : err);
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error('unhandledRejection', reason);
+});
 
 // 1. 가상 파일시스템(대소문자/유니코드 리졸버, 세이브 보호, XHR 복구) 로드
 const {
@@ -59,7 +61,7 @@ setupVirtualFs({ gameDir });
 const userOpt = loadConfig(runtimeDir, gameRootDir);
 const engineInfo = resolveEffectiveEngine(userOpt.engineVersion, gameDir, origExistsSync);
 const isMZ = engineInfo.isMZ;
-console.log(`[mkmv-preload] Engine detected: ${isMZ ? 'RPG Maker MZ' : 'RPG Maker MV'} (mode: ${engineInfo.mode})`);
+logger.info(`Engine detected: ${isMZ ? 'RPG Maker MZ' : 'RPG Maker MV'} (mode: ${engineInfo.mode})`);
 
 if (!process.mainModule) {
   process.mainModule = { filename: path.join(gameDir, 'index.html') };

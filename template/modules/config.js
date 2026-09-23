@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { logger, setLogLevel, parseLogLevel, getLogLevel, LOG_LEVELS, IS_RELEASE } = require('./logger.js');
 
 const PROFILE_DEFAULTS = {
   high: {
@@ -70,13 +71,20 @@ function resolveEffectiveProfile(rawConfig) {
   return profile;
 }
 
+function resolveEffectiveLogLevel(rawConfig, defaultFallback = null) {
+  if (rawConfig && rawConfig.logLevel !== undefined && rawConfig.logLevel !== null) {
+    return parseLogLevel(rawConfig.logLevel, defaultFallback ?? (IS_RELEASE ? LOG_LEVELS.error : LOG_LEVELS.debug));
+  }
+  return defaultFallback ?? (IS_RELEASE ? LOG_LEVELS.error : LOG_LEVELS.debug);
+}
+
 function readJsonFile(filePath) {
   try {
     if (fs.existsSync(filePath)) {
       return JSON.parse(fs.readFileSync(filePath, 'utf8'));
     }
   } catch (e) {
-    console.error(`[mkmv-config] Failed to read JSON from ${filePath}:`, e);
+    logger.error(`Failed to read JSON from ${filePath}:`, e);
   }
   return null;
 }
@@ -98,7 +106,8 @@ function loadConfig(runtimeDir, gameRootDir) {
     fastForward: true,
     fastForwardSpeed: 2,
     performanceProfile: 'auto',
-    engineVersion: 'auto'
+    engineVersion: 'auto',
+    logLevel: null
   };
 
   const rawRuntimeConfig = readJsonFile(path.join(runtimeDir, 'mkmv.json'))
@@ -115,6 +124,11 @@ function loadConfig(runtimeDir, gameRootDir) {
   // Combined explicit user options (game config overrides runtime config)
   const userOverrides = Object.assign({}, rawRuntimeConfig, rawGameConfig);
 
+  // Resolve log level and sync with logger
+  if (userOverrides.logLevel !== undefined && userOverrides.logLevel !== null) {
+    setLogLevel(userOverrides.logLevel);
+  }
+
   // Resolve target performance profile
   const effectiveProfile = resolveEffectiveProfile(userOverrides);
   const profileDefaults = PROFILE_DEFAULTS[effectiveProfile] || PROFILE_DEFAULTS.medium;
@@ -128,6 +142,7 @@ function loadConfig(runtimeDir, gameRootDir) {
   );
 
   finalConfig.effectiveProfile = effectiveProfile;
+  finalConfig.effectiveLogLevel = getLogLevel();
 
   // Backwards compatibility sync
   if (finalConfig.lowMemoryMode === undefined) {
@@ -166,6 +181,7 @@ module.exports = {
   detectHardwareProfile,
   resolveEffectiveProfile,
   resolveEffectiveEngine,
+  resolveEffectiveLogLevel,
   PROFILE_DEFAULTS
 };
 

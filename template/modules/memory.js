@@ -10,6 +10,9 @@
  *    - 배속 플레이 시 메모리 누적 방지: 유휴 GC 주기적 실행 및 RSS/Heap 사용량 로깅
  */
 
+const { createLogger } = require('./logger.js');
+const logger = createLogger('mkmv-mem');
+
 function setupFpsMeter(userOpt = {}) {
   if (!userOpt.showFps || typeof window === 'undefined') return;
 
@@ -170,7 +173,7 @@ function setupLowMemoryManager(userOpt = {}) {
     if (sceneHooked && mapHooked) {
       clearInterval(memTimer);
       if (memCleanup) clearTimeout(memCleanup);
-      console.log('[mkmv-preload] Low memory scene & map GC installed successfully');
+      logger.debug('Low memory scene & map GC installed successfully');
     }
   }, 50);
   memCleanup = setTimeout(() => clearInterval(memTimer), 20000);
@@ -191,7 +194,7 @@ function setupLowMemoryManager(userOpt = {}) {
         const rssMB = Math.round(mem.rss / 1024 / 1024);
         const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
         const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
-        console.log(`[mkmv-mem] RSS: ${rssMB}MB | Heap: ${heapUsedMB}/${heapTotalMB}MB`);
+        logger.debug(`RSS: ${rssMB}MB | Heap: ${heapUsedMB}/${heapTotalMB}MB`);
       }
     } catch (e) {}
   }, gcIntervalMs);

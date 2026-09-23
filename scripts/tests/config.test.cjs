@@ -90,6 +90,23 @@ try {
   const mvDetected = resolveEffectiveEngine('auto', mvGameDir);
   assert.deepStrictEqual(mvDetected, { engine: 'mv', isMZ: false, mode: 'auto' });
 
+  // 4. Test logLevel resolution in config
+  const { resolveEffectiveLogLevel } = require('../../template/modules/config.js');
+  const { LOG_LEVELS } = require('../../template/modules/logger.js');
+  assert.strictEqual(resolveEffectiveLogLevel({ logLevel: 'verbose' }), LOG_LEVELS.verbose);
+  assert.strictEqual(resolveEffectiveLogLevel({ logLevel: 'error' }), LOG_LEVELS.error);
+  assert.strictEqual(resolveEffectiveLogLevel({ logLevel: 'warn' }), LOG_LEVELS.warn);
+  assert.strictEqual(resolveEffectiveLogLevel({ logLevel: 'debug' }), LOG_LEVELS.debug);
+  assert.strictEqual(resolveEffectiveLogLevel({}, LOG_LEVELS.debug), LOG_LEVELS.debug);
+
+  // Test logLevel override via mkmv.json
+  fs.writeFileSync(path.join(gameDir, 'mkmv.json'), JSON.stringify({
+    logLevel: 'verbose'
+  }));
+  const logTestConfig = loadConfig(tempDir, gameDir);
+  assert.strictEqual(logTestConfig.logLevel, 'verbose');
+  assert.strictEqual(logTestConfig.effectiveLogLevel, LOG_LEVELS.verbose);
+
   console.log('[test] All config module tests passed successfully!');
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });

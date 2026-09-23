@@ -19,6 +19,8 @@
 
 const path = require('path');
 const fs = require('fs');
+const { createLogger } = require('./logger.js');
+const logger = createLogger('mkmv-vfs');
 
 // 원본 fs 메서드 백업 (재귀 호출 방지 및 고속 직접 접근용)
 const origExistsSync = fs.existsSync;
@@ -212,7 +214,7 @@ function resolveGamePath(inputUrl, baseDir = activeGameDir) {
     try {
       target = new URL(target).pathname;
     } catch (e) {
-      target = target.replace(/^file:\/\//, '');
+      target = target.slice(7);
     }
   }
   try {
@@ -300,7 +302,7 @@ function setupUniversalXhrRecovery(baseDir = activeGameDir) {
             }
             self.dispatchEvent(new ProgressEvent('loadend'));
           } catch (err) {
-            console.error('[mkmv-vfs] XHR direct fulfill error:', err);
+            logger.error('XHR direct fulfill error:', err);
             if (typeof self.onerror === 'function') {
               self.onerror();
             }
@@ -333,7 +335,7 @@ function setupUniversalXhrRecovery(baseDir = activeGameDir) {
     };
   }
 
-  console.log('[mkmv-vfs] Universal XHR & Fetch Unicode recovery installed');
+  logger.debug('Universal XHR & Fetch Unicode recovery installed');
 }
 
 // Node.js fs 가상화 패치
@@ -356,7 +358,7 @@ function patchFs(baseDir = activeGameDir) {
       content = origReadFileSync.call(fs, resolved, options);
     } catch (err) {
       if (typeof p === 'string' && (p === 'lng.txt' || p.endsWith('/lng.txt') || p.endsWith('\\lng.txt'))) {
-        console.warn(`[mkmv-vfs] Missing ${p} detected, automatically generating fallback language 'ko'`);
+        logger.warn(`Missing ${p} detected, automatically generating fallback language 'ko'`);
         try {
           origWriteFileSync.call(fs, resolved, 'ko', 'utf8');
         } catch (e) {}
@@ -383,7 +385,7 @@ function patchFs(baseDir = activeGameDir) {
       const targetBak = origExistsSync.call(fs, hiddenBakFile) ? hiddenBakFile : (origExistsSync.call(fs, legacyBakFile) ? legacyBakFile : null);
 
       if (targetBak) {
-        console.warn(`[mkmv-vfs] Corrupted 0-byte save detected for ${p}, restoring from ${targetBak}`);
+        logger.warn(`Corrupted 0-byte save detected for ${p}, restoring from ${targetBak}`);
         try {
           content = origReadFileSync.call(fs, targetBak, options);
         } catch (e) {}
@@ -435,7 +437,7 @@ function patchFs(baseDir = activeGameDir) {
         origRenameSync.call(fs, tmpPath, resolvedPath);
         return;
       } catch (err) {
-        console.warn('[mkmv-vfs] Atomic save failed, falling back to direct write:', err);
+        logger.warn('Atomic save failed, falling back to direct write:', err);
       }
     }
     return origWriteFileSync.call(fs, resolvedPath, data, options);
@@ -460,20 +462,20 @@ function setupDataManagerRecovery(baseDir = activeGameDir) {
 
           if (hasSpecial && exists) {
             try {
-              console.log(`[mkmv-vfs] Direct loading Unicode DataFile via Node.js fs: ${src}`);
+              logger.verbose(`Direct loading Unicode DataFile via Node.js fs: ${src}`);
               const content = origReadFileSync.call(fs, resolved, 'utf8');
               window[name] = JSON.parse(content.replace(/^\uFEFF/, ''));
               DataManager.onLoad(window[name]);
               return;
             } catch (e) {
-              console.error('[mkmv-vfs] Direct DataFile load error:', e);
+              logger.error('Direct DataFile load error:', e);
             }
           }
           return origLoadDataFile.apply(this, arguments);
         };
         clearInterval(hookTimer);
         if (cleanupTimer) clearTimeout(cleanupTimer);
-        console.log('[mkmv-vfs] DataManager unicode recovery hook installed successfully');
+        logger.debug('DataManager unicode recovery hook installed successfully');
       }
     }
   }, 50);

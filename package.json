@@ -6,6 +6,9 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:release": "node scripts/build.mjs --target=release",
+    "build:debug": "node scripts/build.mjs --target=debug",
+    "test": "node scripts/tests/run-all.cjs",
     "clean": "node scripts/clean.mjs"
   },
   "keywords": [

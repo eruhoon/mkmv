@@ -9,6 +9,9 @@
  * 5. 고속 배속(Fast-Forward / 터보) 시스템 (R3 / R / Tab 키 토글 및 발열 방지 프레임 스킵)
  */
 
+const { createLogger } = require('./logger.js');
+const logger = createLogger('mkmv-input');
+
 let origNativeGetGamepads = (typeof navigator !== 'undefined' && navigator.getGamepads)
   ? navigator.getGamepads.bind(navigator)
   : null;
@@ -42,12 +45,12 @@ function setupTouchControls(userOpt) {
     }
   }, 30);
   setTimeout(() => clearInterval(touchTimer), 10000);
-  console.log('[mkmv-input] Touch input disabled via config');
+  logger.debug('Touch input disabled via config');
 }
 
 function setupNativeGamepadConflictResolver(userOpt) {
   if (userOpt && userOpt.disableNativeGamepad === false) {
-    console.log('[mkmv-input] Native Gamepad API active (disableNativeGamepad: false)');
+    logger.debug('Native Gamepad API active (disableNativeGamepad: false)');
     return;
   }
 
@@ -75,7 +78,7 @@ function setupNativeGamepadConflictResolver(userOpt) {
     if (typeof inputObj._updateGamepadState === 'function') {
       inputObj._updateGamepadState = function() {};
     }
-    console.log('[mkmv-input] Neutralized Input._pollGamepads for gptokeyb harmony');
+    logger.debug('Neutralized Input._pollGamepads for gptokeyb harmony');
   }
 
   let inputHooked = false;
@@ -88,7 +91,7 @@ function setupNativeGamepadConflictResolver(userOpt) {
   }, 10);
   setTimeout(() => clearInterval(inputTimer), 30000);
 
-  console.log('[mkmv-input] Native Gamepad API isolated successfully (gptokeyb single-source mode)');
+  logger.debug('Native Gamepad API isolated successfully (gptokeyb single-source mode)');
 }
 
 function setupKeymapDebugOverlay(userOpt) {
@@ -208,7 +211,7 @@ function setupKeymapDebugOverlay(userOpt) {
     if (overlay.parentNode !== document.body || document.body.lastElementChild !== overlay) {
       document.body.appendChild(overlay);
       if (isNew) {
-        console.log('[mkmv-input] Keymap debug overlay attached to document.body (z-index: 2147483647)');
+        logger.debug('Keymap debug overlay attached to document.body (z-index: 2147483647)');
       }
     }
     render();
@@ -231,7 +234,7 @@ function setupKeymapDebugOverlay(userOpt) {
     const keyCode = e.keyCode || e.which || 0;
     const action = getRpgAction(keyCode);
 
-    console.log(`[mkmv-input] ${type}: key="${key}", code="${code}", keyCode=${keyCode} -> RPG: "${action || 'none'}"`);
+    logger.verbose(`${type}: key="${key}", code="${code}", keyCode=${keyCode} -> RPG: "${action || 'none'}"`);
 
     const keyId = `${code}_${keyCode}`;
     if (type === 'DOWN') {
@@ -274,7 +277,7 @@ function setupKeymapDebugOverlay(userOpt) {
           const stateStr = `pad${i}_btn[${pressed.join(',')}]`;
           if (stateStr !== lastPadState) {
             lastPadState = stateStr;
-            console.log(`[mkmv-input] Hardware Gamepad #${i} (${pad.id}): Pressed buttons: ${pressed.join(', ')}`);
+            logger.verbose(`Hardware Gamepad #${i} (${pad.id}): Pressed buttons: ${pressed.join(', ')}`);
           }
         }
       }
@@ -292,7 +295,7 @@ function setupKeymapDebugOverlay(userOpt) {
         el.style.setProperty('display', isVisible ? 'block' : 'none', 'important');
         if (isVisible) render();
       }
-      console.log(`[mkmv-input] Keymap debug overlay visibility toggled: ${isVisible}`);
+      logger.debug(`Keymap debug overlay visibility toggled: ${isVisible}`);
       e.preventDefault();
       return;
     }
@@ -314,7 +317,7 @@ function setupKeymapDebugOverlay(userOpt) {
   window.addEventListener('keyup', handleKeyup, { capture: true, passive: false });
 
   if (isVisible) {
-    console.log('[mkmv-input] Keymap debug overlay enabled (debugKeymap: true)');
+    logger.debug('Keymap debug overlay enabled (debugKeymap: true)');
     ensureOverlay();
   }
 }
@@ -376,7 +379,7 @@ function setupFastForward(userOpt, isMZ) {
         }
       }
     }
-    console.log(`[mkmv-input] Fast forward toggled: ${isFastForward ? `${speedMultiplier}x` : '1x'}`);
+    logger.debug(`Fast forward toggled: ${isFastForward ? `${speedMultiplier}x` : '1x'}`);
   }
 
   window.addEventListener('keydown', (e) => {
@@ -445,7 +448,7 @@ function setupFastForward(userOpt, isMZ) {
         }
       };
       clearInterval(hookTimer);
-      console.log(`[mkmv-input] Fast forward engine hook installed (${speedMultiplier}x available on R3/Tab with thermal frame-skip)`);
+      logger.debug(`Fast forward engine hook installed (${speedMultiplier}x available on R3/Tab with thermal frame-skip)`);
     }
   }, 50);
   setTimeout(() => clearInterval(hookTimer), 30000);

@@ -6,6 +6,14 @@ mkmv는 사용자의 운용 방식에 따라 **두 가지 배포 패키지**를 
 1. **공유 런타임 패키지 (`mkmv-runtime-v*.zip`)** ⭐ **[강력 추천]**: 대용량 런타임 바이너리를 1회만 설치하고 여러 게임이 공유하여 SD 카드 용량을 절약하는 방식
 2. **올인원 포터블 패키지 (`mkmv-portable-v*.zip`)**: 게임 하나당 런타임이 통째로 묶여 있는 독립 구동 방식
 
+> 🚀 **릴리즈 / 디버그 패키지 안내**:
+> - **릴리즈(Release) 패키지** (`mkmv-runtime-v*.zip`, `mkmv-portable-v*.zip`):
+>   - JavaScript 코드 난독화 및 주석/공백 압축(30%+ 용량 절감) 적용
+>   - 크리티컬 에러(Critical / Error) 전용 로깅 모드로 SD 카드 I/O 부하 및 콘솔 병목 제거
+> - **디버그(Debug) 패키지** (`mkmv-runtime-debug-v*.zip`, `mkmv-portable-debug-v*.zip`):
+>   - 소스 원형 및 주석 보존 (문제 해결 및 모드 분석용)
+>   - 기본 `debug` 수준의 상세 로그 출력 및 `mkmv.json`에서 `"logLevel": "verbose"` 설정 시 키 입력/에셋 전수 추적 지원
+
 ---
 
 ## 🌟 방식 A. 공유 런타임 방식 (권장: 다수 게임 관리 & 용량 절약)
@@ -115,6 +123,10 @@ roms/ports/
 * `"showFps": true` : 화면 좌상단에 네이티브 FPS 및 렌더링 성능 오버레이 표시
 * `"fastForward": true` : R3(우측 스틱 클릭)로 1배속 ↔ 고속 배속 토글 (발열 방지 프레임 스킵 내장)
 * `"fastForwardSpeed": 2` : 배속 배율 (2: 2배속, 3: 3배속)
+* `"logLevel": "debug"` : 로그 출력 상세 수준 설정 (`"silent"`, `"error"`, `"warn"`, `"info"`, `"debug"`, `"verbose"`)
+  - `"error"`: **릴리즈 패키지 기본값**. 치명적 크래시 및 런타임 에러만 기록하여 SD 카드 쓰기 부하와 콘솔 I/O 병목을 원천 제거
+  - `"debug"`: **디버그 패키지 기본값**. 엔진 감지, 하드웨어 프로파일, 훅 설치 상태, 메모리 GC 요약 등 핵심 진단 정보 출력
+  - `"verbose"`: **초정밀 문제 해결 모드**. 매 키보드/게임패드 입력, 대소문자 탐색 세부 내역, 개별 XHR/이미지/오디오 복구 내역까지 전수 추적 (환경변수 `MKMV_LOG_LEVEL=verbose` 또는 CLI `--verbose`로도 활성화 가능)
 * `"lowMemoryMode": true` : (레거시 호환) `true` 설정 시 `performanceProfile: "low"`와 동일하게 동작
 * `"gameDir": "custom_path"` : (선택사항) 게임 에셋이 특수한 하위 폴더에 있는 경우 수동 지정 가능
 

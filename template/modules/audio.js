@@ -12,6 +12,8 @@
  */
 
 const path = require('path');
+const { createLogger } = require('./logger.js');
+const logger = createLogger('mkmv-audio');
 
 function patchAudioFocus() {
   if (typeof window === 'undefined') return;
@@ -47,9 +49,9 @@ function setupAudioRecovery() {
     try {
       if (window.WebAudio && window.WebAudio._context && window.WebAudio._context.state === 'suspended') {
         window.WebAudio._context.resume().then(() => {
-          console.log('[mkmv-audio] WebAudio context resumed after sleep/focus');
+          logger.debug('WebAudio context resumed after sleep/focus');
         }).catch((e) => {
-          console.warn('[mkmv-audio] WebAudio resume failed:', e);
+          logger.warn('WebAudio resume failed:', e);
         });
       }
     } catch (e) {}
@@ -96,13 +98,13 @@ function setupUniversalAudioRecovery(options = {}) {
               const buf = origReadFileSync(resolved);
               const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
               if (!isRpgmvHeader) {
-                console.log(`[mkmv-audio] Direct loading Unicode WebAudio via Node.js fs: ${url}`);
+                logger.verbose(`Direct loading Unicode WebAudio via Node.js fs: ${url}`);
                 const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
                 this._onXhrLoad({ status: 200, response: arrayBuffer });
                 return;
               }
             } catch (e) {
-              console.error('[mkmv-audio] Direct WebAudio load error:', e);
+              logger.error('Direct WebAudio load error:', e);
             }
           }
           return origWebAudioLoad.apply(this, arguments);
@@ -132,7 +134,7 @@ function setupUniversalAudioRecovery(options = {}) {
               const buf = origReadFileSync(resolved);
               const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
               if (!isRpgmvHeader) {
-                console.log(`[mkmv-audio] Direct loading Unicode Html5Audio via Blob: ${url}`);
+                logger.verbose(`Direct loading Unicode Html5Audio via Blob: ${url}`);
                 const ext = path.extname(resolved).toLowerCase();
                 const mime = ext === '.ogg' ? 'audio/ogg' : (ext === '.m4a' ? 'audio/mp4' : 'audio/mpeg');
                 const blob = new Blob([buf], { type: mime });
@@ -142,7 +144,7 @@ function setupUniversalAudioRecovery(options = {}) {
                 return;
               }
             } catch (e) {
-              console.error('[mkmv-audio] Direct Html5Audio load error:', e);
+              logger.error('Direct Html5Audio load error:', e);
             }
           }
           return origHtml5Load.apply(this, arguments);
@@ -154,7 +156,7 @@ function setupUniversalAudioRecovery(options = {}) {
     if (webAudioHooked || (window.WebAudio && window.WebAudio.prototype && window.WebAudio.prototype._mkmvAudioHooked)) {
       clearInterval(hookTimer);
       if (cleanupTimer) clearTimeout(cleanupTimer);
-      console.log('[mkmv-audio] Universal Audio recovery hooks installed successfully');
+      logger.debug('Universal Audio recovery hooks installed successfully');
     }
   }, 50);
   cleanupTimer = setTimeout(() => clearInterval(hookTimer), 30000);

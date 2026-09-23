@@ -13,6 +13,8 @@
 
 const path = require('path');
 const fs = require('fs');
+const { createLogger } = require('./logger.js');
+const logger = createLogger('mkmv-image');
 
 function setupCanvasOptimization() {
   try {
@@ -145,16 +147,16 @@ function setupResourceErrorLogger(gameDir) {
         window.Graphics._mkmvHooked = true;
         const origPrintLoadingError = window.Graphics.printLoadingError;
         window.Graphics.printLoadingError = function(url) {
-          console.error(`[mkmv-resource-error] Failed to load resource: ${url}`);
+          logger.error(`Failed to load resource: ${url}`);
           try {
             if (gameDir) {
-              console.error(`[mkmv-resource-error] Target path: ${path.join(gameDir, url)}`);
+              logger.error(`Target path: ${path.join(gameDir, url)}`);
             }
           } catch (e) {}
           return origPrintLoadingError.apply(this, arguments);
         };
         clearInterval(hookTimer);
-        console.log('[mkmv-image] Resource loading error logger installed');
+        logger.debug('Resource loading error logger installed');
       }
     }
   }, 50);
@@ -189,14 +191,14 @@ function setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFi
               const buf = origReadFileSync.call(fs, resolved);
               const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
               if (!isRpgmvHeader) {
-                console.log(`[mkmv-image] Direct loading Unicode image via Node.js fs: ${targetUrl}`);
+                logger.verbose(`Direct loading Unicode image via Node.js fs: ${targetUrl}`);
                 const ext = path.extname(resolved).toLowerCase().replace('.', '');
                 const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
                 const dataUrl = `data:${mime};base64,` + buf.toString('base64');
                 return origRequestImage.call(this, dataUrl);
               }
             } catch (e) {
-              console.error('[mkmv-image] Direct image load error:', e);
+              logger.error('Direct image load error:', e);
             }
           }
 
@@ -223,7 +225,7 @@ function setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFi
                   const buf = origReadFileSync.call(fs, retryResolved);
                   const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
                   if (!isRpgmvHeader) {
-                    console.log(`[mkmv-image] Auto-recovering Unicode image via Node.js fs: ${retryUrl}`);
+                    logger.verbose(`Auto-recovering Unicode image via Node.js fs: ${retryUrl}`);
                     const ext = path.extname(retryResolved).toLowerCase().replace('.', '');
                     const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
                     const targetImg = self._image || this || (e && e.target);
@@ -234,7 +236,7 @@ function setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFi
                   }
                 }
               } catch (err) {
-                console.error('[mkmv-image] Image recovery failed:', err);
+                logger.error('Image recovery failed:', err);
               }
 
               // 실제 파일이 없거나 복구 불가 시 원래 에러 핸들러 호출
@@ -246,7 +248,7 @@ function setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFi
         };
 
         clearInterval(hookTimer);
-        console.log('[mkmv-image] Unicode image recovery handler installed');
+        logger.debug('Unicode image recovery handler installed');
       }
     }
   }, 50);
@@ -258,7 +260,7 @@ function setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origRe
 
   const desc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
   if (!desc || !desc.set) {
-    console.warn('[mkmv-image] HTMLImageElement.prototype.src descriptor not found');
+    logger.warn('HTMLImageElement.prototype.src descriptor not found');
     return;
   }
 
@@ -283,13 +285,13 @@ function setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origRe
         const buf = origReadFileSync.call(fs, resolved);
         const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
         if (!isRpgmvHeader) {
-          console.log(`[mkmv-image] Direct loading Unicode HTMLImageElement: ${inputUrl}`);
+          logger.verbose(`Direct loading Unicode HTMLImageElement: ${inputUrl}`);
           const ext = path.extname(resolved).toLowerCase().replace('.', '');
           const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
           return `data:${mime};base64,` + buf.toString('base64');
         }
       } catch (e) {
-        console.error('[mkmv-image] HTMLImageElement direct load failed:', e);
+        logger.error('HTMLImageElement direct load failed:', e);
       }
     }
     return inputUrl;
@@ -309,7 +311,7 @@ function setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origRe
       }
     });
   } catch (e) {
-    console.error('[mkmv-image] Failed to hook HTMLImageElement.prototype.src:', e);
+    logger.error('Failed to hook HTMLImageElement.prototype.src:', e);
   }
 
   try {
@@ -347,21 +349,21 @@ function setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origRe
               target._mkmvRecovered = true;
               e.preventDefault();
               e.stopImmediatePropagation();
-              console.log(`[mkmv-image] Auto-recovering failed HTMLImageElement via Node.js fs: ${rawSrc}`);
+              logger.verbose(`Auto-recovering failed HTMLImageElement via Node.js fs: ${rawSrc}`);
               const ext = path.extname(resolved).toLowerCase().replace('.', '');
               const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
               origSrcSet.call(target, `data:${mime};base64,` + buf.toString('base64'));
               return;
             }
           } catch (err) {
-            console.error('[mkmv-image] HTMLImageElement error recovery failed:', err);
+            logger.error('HTMLImageElement error recovery failed:', err);
           }
         }
       }
     }, true);
   } catch (e) {}
 
-  console.log('[mkmv-image] HTMLImageElement Unicode recovery handler installed');
+  logger.debug('HTMLImageElement Unicode recovery handler installed');
 }
 
 function setupCanvasMeshCompatibility() {
@@ -382,7 +384,7 @@ function setupCanvasMeshCompatibility() {
           renderer.context.globalAlpha = this.worldAlpha;
           return origRenderCanvas.apply(this, arguments);
         };
-        console.log('[mkmv-image] Canvas mesh opacity and padding hooks installed');
+        logger.debug('Canvas mesh opacity and padding hooks installed');
       }
       meshPatched = true;
     }
@@ -413,7 +415,7 @@ function setupCanvasMeshCompatibility() {
         }
         return origDrawTriangle.apply(this, arguments);
       };
-      console.log('[mkmv-image] CanvasMeshRenderer._renderDrawTriangle hook installed');
+      logger.debug('CanvasMeshRenderer._renderDrawTriangle hook installed');
     }
 
     // 3. SpineMesh 및 Spine 객체 후킹 (Spine이 지연 로드될 때까지 타이머 유지)
@@ -430,7 +432,7 @@ function setupCanvasMeshCompatibility() {
             return mesh;
           };
         }
-        console.log('[mkmv-image] Spine.prototype.newMesh hook installed');
+        logger.debug('Spine.prototype.newMesh hook installed');
       }
       spinePatched = true;
     }

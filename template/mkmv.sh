@@ -11,6 +11,20 @@ SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}" .sh)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CODE_PREFIX="${SCRIPT_NAME%% - *}"
 
+# 빌드 및 디버그 모드 감지 ('release' 또는 'debug')
+DEFAULT_BUILD_MODE="__BUILD_MODE_PLACEHOLDER__"
+SCRIPT_NAME_LOWER="$(echo "$SCRIPT_NAME" | tr '[:upper:]' '[:lower:]')"
+SCRIPT_DIR_LOWER="$(echo "$SCRIPT_DIR" | tr '[:upper:]' '[:lower:]')"
+
+if [ -n "$MKMV_BUILD_MODE" ]; then
+  BUILD_MODE="$MKMV_BUILD_MODE"
+elif [[ "$SCRIPT_DIR_LOWER" == *"debug"* ]] || [[ "$SCRIPT_NAME_LOWER" == *"debug"* ]]; then
+  BUILD_MODE="debug"
+else
+  BUILD_MODE="$DEFAULT_BUILD_MODE"
+fi
+export MKMV_BUILD_MODE="$BUILD_MODE"
+
 # 1. 게임 폴더명 자동 감지 (공백 및 " - 부제" 포함 런처 파일명 완벽 지원)
 if [ -d "/$directory/ports/$SCRIPT_NAME" ]; then
   GAME_CODE="$SCRIPT_NAME"
@@ -56,18 +70,28 @@ RUNTIME_DIR=""
 if [ -f "$GAME_ROOT/electron" ]; then
   # 1. 포터블 모드: 게임 디렉토리 자체에 electron이 존재하는 경우
   RUNTIME_DIR="$GAME_ROOT"
+elif [ "$BUILD_MODE" = "debug" ] && [ -f "$SCRIPT_DIR/mkmv-runtime-debug/electron" ]; then
+  # 2. 디버그 모드 시 디버그 전용 공유 런타임 우선 감지
+  RUNTIME_DIR="$SCRIPT_DIR/mkmv-runtime-debug"
+elif [ "$BUILD_MODE" = "debug" ] && [ -f "/$directory/ports/mkmv-runtime-debug/electron" ]; then
+  RUNTIME_DIR="/$directory/ports/mkmv-runtime-debug"
 elif [ -f "$SCRIPT_DIR/mkmv-runtime/electron" ]; then
-  # 2. 공유 런타임 모드: ports/mkmv-runtime
+  # 3. 기본 공유 런타임 모드: ports/mkmv-runtime
   RUNTIME_DIR="$SCRIPT_DIR/mkmv-runtime"
 elif [ -f "/$directory/ports/mkmv-runtime/electron" ]; then
   RUNTIME_DIR="/$directory/ports/mkmv-runtime"
+elif [ -f "$SCRIPT_DIR/mkmv-runtime-debug/electron" ]; then
+  # 4. 디버그 공유 런타임만 단독 설치된 경우 폴백 감지
+  RUNTIME_DIR="$SCRIPT_DIR/mkmv-runtime-debug"
+elif [ -f "/$directory/ports/mkmv-runtime-debug/electron" ]; then
+  RUNTIME_DIR="/$directory/ports/mkmv-runtime-debug"
 elif [ -f "$SCRIPT_DIR/mkmv/electron" ]; then
-  # 3. 대체 폴더명 호환: ports/mkmv
+  # 5. 대체 폴더명 호환: ports/mkmv
   RUNTIME_DIR="$SCRIPT_DIR/mkmv"
 elif [ -f "/$directory/ports/mkmv/electron" ]; then
   RUNTIME_DIR="/$directory/ports/mkmv"
 elif [ -f "$controlfolder/libs/mkmv-runtime/electron" ]; then
-  # 4. PortMaster 시스템 라이브러리 디렉토리
+  # 6. PortMaster 시스템 라이브러리 디렉토리
   RUNTIME_DIR="$controlfolder/libs/mkmv-runtime"
 fi
 
@@ -111,10 +135,12 @@ cleanup() {
     swapoff /dev/zram0 2>/dev/null
     echo 1 > /sys/block/zram0/reset 2>/dev/null
   fi
-  echo "=== SYSTEM MEMORY STATUS ==="
-  free -m 2>/dev/null
-  echo "=== KERNEL DMESG (OOM / CRASH CHECK) ==="
-  dmesg | tail -n 50 2>/dev/null
+  if [ "$BUILD_MODE" = "debug" ]; then
+    echo "=== SYSTEM MEMORY STATUS ==="
+    free -m 2>/dev/null
+    echo "=== KERNEL DMESG (OOM / CRASH CHECK) ==="
+    dmesg | tail -n 50 2>/dev/null
+  fi
   rm -f "$RUNNER" 2>/dev/null
   if [ -d "/tmp/weston" ]; then
     /tmp/weston/westonwrap.sh cleanup 2>/dev/null
@@ -200,7 +226,11 @@ export PORTMASTER_HOME="$controlfolder"
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 export TEXTINPUTINTERACTIVE="Y"
 export XDG_DATA_HOME="$CONF_DIR"
-export ELECTRON_ENABLE_LOGGING=1
+if [ "$BUILD_MODE" = "debug" ]; then
+  export ELECTRON_ENABLE_LOGGING="${MKMV_ELECTRON_LOGGING:-1}"
+else
+  export ELECTRON_ENABLE_LOGGING="${MKMV_ELECTRON_LOGGING:-0}"
+fi
 export LD_LIBRARY_PATH="/usr/lib:/usr/lib/aarch64-linux-gnu:$LD_LIBRARY_PATH"
 unset DBUS_SESSION_BUS_ADDRESS
 export LC_ALL=C
@@ -225,6 +255,7 @@ pm_platform_helper "$RUNTIME_DIR/electron" >/dev/null
 
 echo "=== DISPLAY & RUNTIME ENVIRONMENT ==="
 echo "CFW_NAME: $CFW_NAME"
+echo "BUILD_MODE: $BUILD_MODE"
 echo "DISPLAY: $DISPLAY"
 echo "WAYLAND_DISPLAY: $WAYLAND_DISPLAY"
 echo "XDG_RUNTIME_DIR: $XDG_RUNTIME_DIR"
@@ -248,7 +279,7 @@ export MALLOC_MMAP_THRESHOLD_=65536
 
 # Electron 전용 라이브러리 및 환경 설정 (외부 weston/crusty 경로를 완벽히 배제)
 export LD_LIBRARY_PATH="$RUNTIME_DIR/lib:$RUNTIME_DIR:/usr/lib:/usr/lib/aarch64-linux-gnu:/lib:/lib/aarch64-linux-gnu"
-export ELECTRON_ENABLE_LOGGING=1
+export ELECTRON_ENABLE_LOGGING="${ELECTRON_ENABLE_LOGGING:-0}"
 export GTK_CSD=0
 export PULSE_LATENCY_MSEC=60
 

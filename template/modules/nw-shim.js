@@ -20,6 +20,9 @@
  */
 
 const Module = require('module');
+const path = require('path');
+const { createLogger } = require('./logger.js');
+const logger = createLogger('mkmv-nw');
 
 function createNwShim(gameDir, userOpt = {}) {
   return {
@@ -58,10 +61,10 @@ function createNwShim(gameDir, userOpt = {}) {
         leaveFullscreen: () => {},
         toggleFullscreen: () => {},
         resizeTo: (w, h) => {
-          console.log('[mkmv-nw] Intercepted nw.Window.get().resizeTo:', w, h);
+          logger.verbose('Intercepted nw.Window.get().resizeTo:', w, h);
         },
         resizeBy: (dw, dh) => {
-          console.log('[mkmv-nw] Intercepted nw.Window.get().resizeBy:', dw, dh);
+          logger.verbose('Intercepted nw.Window.get().resizeBy:', dw, dh);
         },
         moveTo: () => {},
         moveBy: () => {},
@@ -148,7 +151,7 @@ function blockYanflyResolution() {
   const yanflyGuardTimer = setInterval(() => {
     if (window.Yanfly && window.Yanfly.updateResolution) {
       window.Yanfly.updateResolution = function() {
-        console.log('[mkmv-nw] Blocked Yanfly.updateResolution()');
+        logger.debug('Blocked Yanfly.updateResolution()');
       };
       clearInterval(yanflyGuardTimer);
       if (cleanupTimer) clearTimeout(cleanupTimer);
