@@ -86,7 +86,6 @@ roms/ports/
   "forceDeviceScaleFactor": 1.0,
   "scaling": "fit",
   "pixelated": true,
-  "disableGpu": true,
   "hideCursor": false,
   "disableTouch": false,
   "showFps": false,
@@ -94,19 +93,24 @@ roms/ports/
   "disableNativeGamepad": true,
   "fastForward": true,
   "fastForwardSpeed": 2,
-  "lowMemoryMode": true
+  "performanceProfile": "auto"
 }
 ```
 
+* `"performanceProfile": "auto"` : 기기 사양 및 발열 환경에 따른 렌더링/메모리 프로파일 구성 (`"auto"`, `"high"`, `"medium"`, `"low"`)
+  - `"high"` (RG VITA PRO, RK3576 등): Mali-G52 하드웨어 WebGL 가속 활성화, 512MB V8 힙, 60초 주기 유휴 GC, 풀 캐시 적용으로 60 FPS 부드러운 구동
+  - `"medium"` (패시브 쿨링 기기 권장 / 1.5GB ~ 2.5GB RAM): 하드웨어 WebGL 가속 활성화, 384MB V8 힙, 45초 주기 유휴 GC, 단일 렌더러 프로세스 제한으로 장시간 플레이 시 발열 및 메모리 누적 방지
+  - `"low"` (1GB RAM 이하 기기: H700, RK3326 등): 안정적인 소프트웨어 CPU 렌더링, 128MB V8 힙 제한, 단일 렌더러 프로세스 제약
+* `"cpuMaxFreq": 1608000` : (선택사항) 기기 CPU 최대 클럭 상한선(kHz). 팬이 없는 기기에서 발열로 인한 하드웨어 재부팅을 방지하기 위해 1.6GHz로 안전 캡을 씌우며, 게임 종료 시 원래 클럭으로 자동 복구됩니다.
+* `"disableGpu": false` : 하드웨어 GPU 가속 강제 활성화 (프로파일 기본값 대신 수동 지정 시 사용)
 * `"disableNativeGamepad": true` : PortMaster의 `gptokeyb` 가상 키보드와 브라우저 Gamepad API의 이중 입력 및 버튼 충돌(A버튼이 cancel로 덮어써져 키가 씹히는 문제)을 원천 차단 (기본값: `true`)
 * `"debugKeymap": true` : 게임 화면 좌측 상단에 실시간 패드/키보드 입력 디버그 오버레이 표시 (`F10` 단축키로 온오프 토글 가능)
 * `"scaling": "fit"` : 원본 도트 종횡비를 유지하며 화면에 꽉 채우고 중앙 배치 (기본값)
 * `"scaling": "fill"` : 화면 전체에 빈틈없이 가득 채움 (풀 스트레칭)
 * `"showFps": true` : 화면 좌상단에 네이티브 FPS 및 렌더링 성능 오버레이 표시
-* `"debugKeymap": true` : 화면 좌상단에 실시간 키 입력 및 알만툴 키매핑(keydown/up, action) 디버그 창 표시 (F10으로도 토글 가능)
 * `"fastForward": true` : R3(우측 스틱 클릭)로 1배속 ↔ 고속 배속 토글 (발열 방지 프레임 스킵 내장)
 * `"fastForwardSpeed": 2` : 배속 배율 (2: 2배속, 3: 3배속)
-* `"lowMemoryMode": true` : 1GB RAM 기기(H700, RK3326 등)를 위한 V8 힙 제한 및 렌더러 캐시 최적화 모드
+* `"lowMemoryMode": true` : (레거시 호환) `true` 설정 시 `performanceProfile: "low"`와 동일하게 동작
 * `"gameDir": "custom_path"` : (선택사항) 게임 에셋이 특수한 하위 폴더에 있는 경우 수동 지정 가능
 
 ---

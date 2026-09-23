@@ -430,23 +430,8 @@ fs.writeFileSync = function(p, data, options) {
 };
 
 // 3. 사용자 정의 옵션 (mkmv.json / config.json) 로드
-let userOpt = { width: 1920, height: 1080, pixelated: true, scaling: 'fit', hideCursor: false, disableTouch: false, showFps: false, debugKeymap: false, fastForward: true, fastForwardSpeed: 2, lowMemoryMode: true };
-try {
-  const runtimeMkmv = path.join(runtimeDir, 'mkmv.json');
-  const runtimeConfig = path.join(runtimeDir, 'config.json');
-  if (origExistsSync.call(fs, runtimeMkmv)) {
-    userOpt = Object.assign(userOpt, JSON.parse(origReadFileSync.call(fs, runtimeMkmv, 'utf8')));
-  } else if (origExistsSync.call(fs, runtimeConfig)) {
-    userOpt = Object.assign(userOpt, JSON.parse(origReadFileSync.call(fs, runtimeConfig, 'utf8')));
-  }
-  const gameMkmvJson = path.join(gameRootDir, 'mkmv.json');
-  const gameConfigJson = path.join(gameRootDir, 'config.json');
-  if (origExistsSync.call(fs, gameMkmvJson)) {
-    userOpt = Object.assign(userOpt, JSON.parse(origReadFileSync.call(fs, gameMkmvJson, 'utf8')));
-  } else if (gameRootDir !== runtimeDir && origExistsSync.call(fs, gameConfigJson)) {
-    userOpt = Object.assign(userOpt, JSON.parse(origReadFileSync.call(fs, gameConfigJson, 'utf8')));
-  }
-} catch (e) {}
+const { loadConfig } = require(path.join(__dirname, 'modules', 'config.js'));
+const userOpt = loadConfig(runtimeDir, gameRootDir);
 
 if (!process.mainModule) {
   process.mainModule = { filename: path.join(gameDir, 'index.html') };
@@ -1208,7 +1193,9 @@ function setupLowMemoryManager() {
   }, 50);
   setTimeout(() => clearInterval(memTimer), 20000);
 
-  // 배속 플레이 시 메모리 누적 방지: 30초마다 유휴 GC 및 메모리 로깅
+  // 배속 플레이 시 메모리 누적 방지: 유휴 GC 및 메모리 로깅
+  const gcIntervalMs = (userOpt.gcIntervalSeconds !== undefined ? userOpt.gcIntervalSeconds : 30) * 1000;
+  if (gcIntervalMs === 0) return;
   let logCounter = 0;
   setInterval(() => {
     try {
@@ -1223,6 +1210,6 @@ function setupLowMemoryManager() {
         console.log(`[mkmv-mem] RSS: ${rssMB}MB | Heap: ${heapUsedMB}/${heapTotalMB}MB`);
       }
     } catch (e) {}
-  }, 30000);
+  }, gcIntervalMs);
 }
 setupLowMemoryManager();

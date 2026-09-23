@@ -93,6 +93,17 @@ SWAP_ACTIVE=0
 
 cleanup() {
   echo "Cleaning up runtime environment..."
+  # CPU 클럭 원상 복구
+  if [ ${#ORIG_SCALING_FREQS[@]} -gt 0 ]; then
+    echo "Restoring original CPU scaling frequencies..."
+    for entry in "${ORIG_SCALING_FREQS[@]}"; do
+      f_path="${entry%%:*}"
+      f_val="${entry##*:}"
+      if [ -w "$f_path" ] && [ -n "$f_val" ]; then
+        echo "$f_val" > "$f_path" 2>/dev/null
+      fi
+    done
+  fi
   # ZRAM 스왑 비활성화
   if [ "$SWAP_ACTIVE" -eq 1 ]; then
     echo "Disabling ZRAM swap buffer..."
@@ -248,35 +259,69 @@ export XDG_DATA_DIRS="$RUNTIME_DIR/share:/usr/share:$XDG_DATA_DIRS"
 export MKMV_RUNTIME_DIR="$RUNTIME_DIR"
 export MKMV_GAME_DIR="$GAME_ROOT"
 
-FLAGS="--ozone-platform=wayland \
-       --enable-features=UseOzonePlatform \
-       --disable-gpu \
-       --disable-gpu-compositing \
-       --disable-gpu-rasterization \
-       --disable-dev-shm-usage \
-       --no-sandbox \
-       --high-dpi-support=1 \
-       --disable-features=TouchpadAndWheelScrollLatching \
-       --autoplay-policy=no-user-gesture-required \
-       --disable-background-networking \
-       --disable-breakpad \
-       --disable-component-update \
-       --disable-domain-reliability \
-       --disable-sync \
-       --disable-translate \
-       --user-data-dir=$GAME_ROOT/conf \
-       --game-dir=$GAME_ROOT"
+# GPU 및 메모리 정책은 main.js(modules/config.js)에서 mkmv.json 설정을 기반으로 동적 결정
+# 공백이 포함된 경로가 깨지지 않도록 배열 형태로 인자 전달
+FLAGS=(--ozone-platform=wayland
+       --enable-features=UseOzonePlatform,NetworkServiceInProcess
+       --disable-dev-shm-usage
+       --no-sandbox
+       --high-dpi-support=1
+       --disable-features=TouchpadAndWheelScrollLatching
+       --autoplay-policy=no-user-gesture-required
+       "--user-data-dir=$GAME_ROOT/conf"
+       "--game-dir=$GAME_ROOT")
 
 chmod +x "$RUNTIME_DIR/electron" 2>/dev/null
-echo "Launching Electron: $RUNTIME_DIR/electron $RUNTIME_DIR $FLAGS"
-exec "$RUNTIME_DIR/electron" "$RUNTIME_DIR" $FLAGS
+echo "Launching Electron: $RUNTIME_DIR/electron $RUNTIME_DIR ${FLAGS[*]}"
+exec "$RUNTIME_DIR/electron" "$RUNTIME_DIR" "${FLAGS[@]}"
 RUNNER_EOF
 chmod +x "$RUNNER" 2>/dev/null
+
+# 발열 방지 클럭 상한선(Thermal Cap) 적용
+# RK3576 빅코어(cpu4-7)가 2.2GHz 풀클럭으로 구동 시 패시브 쿨링 기기에서 패키지 온도가 83°C에 도달하여 전원 차단이 발생합니다.
+# 2D 알만툴 구동에는 1.6GHz로도 60fps가 충분하므로 안전 상한선(1.6GHz)을 적용합니다.
+ORIG_SCALING_FREQS=()
+TARGET_MAX_FREQ="${MKMV_MAX_FREQ:-1608000}"
+
+CONF_FILE="$GAME_ROOT/mkmv.json"
+[ ! -f "$CONF_FILE" ] && CONF_FILE="$RUNTIME_DIR/mkmv.json"
+if [ -f "$CONF_FILE" ]; then
+  JSON_FREQ=$(grep -o '"cpuMaxFreq"[[:space:]]*:[[:space:]]*[0-9]*' "$CONF_FILE" 2>/dev/null | awk -F: '{print $2}' | tr -d ' ')
+  if [ -n "$JSON_FREQ" ] && [ "$JSON_FREQ" -gt 0 ]; then
+    TARGET_MAX_FREQ="$JSON_FREQ"
+  fi
+fi
+
+if [ -w /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq ]; then
+  for f in /sys/devices/system/cpu/cpu[4-7]/cpufreq/scaling_max_freq; do
+    if [ -f "$f" ]; then
+      cur_max=$(cat "$f" 2>/dev/null)
+      if [ -n "$cur_max" ] && [ "$cur_max" -gt "$TARGET_MAX_FREQ" ]; then
+        ORIG_SCALING_FREQS+=("$f:$cur_max")
+        echo "$TARGET_MAX_FREQ" > "$f" 2>/dev/null
+        echo "[mkmv] Thermal safety: capped $(basename "$(dirname "$(dirname "$f")")") to ${TARGET_MAX_FREQ}kHz (was ${cur_max}kHz)"
+      fi
+    fi
+  done
+fi
+
+# CPU 코어 스케줄링 정책:
+# 무소음/패시브 쿨링 기기(RG Vita Pro 등)는 빅코어에만 프로세스를 강제 바인딩(taskset -c 4-7)할 경우
+# 4개 빅코어에 발열이 집중되어 급격한 온도 상승(83°C 임계치 초과)으로 인한 비상 재부팅이 발생합니다.
+# 기본적으로 리눅스 CFS 스케줄러가 8개 코어 전체에 부하를 유연하게 분산하도록 허용하며,
+# 사용자가 명시적으로 ENABLE_FAST_CORES=1을 설정한 경우에만 빅코어 바인딩을 적용합니다.
+LAUNCH_CMD=("$RUNNER")
+if [ "$ENABLE_FAST_CORES" = "1" ] && [ -n "$FAST_CORES" ]; then
+  echo "High performance CPU cores explicitly requested ($FAST_CORES), binding affinity..."
+  LAUNCH_CMD=($FAST_CORES "$RUNNER")
+else
+  echo "Balanced multi-core scheduling active (CFS all-cores distribution)."
+fi
 
 # Wayland 환경 여부에 따른 실행 분기
 if [ -n "$WAYLAND_DISPLAY" ]; then
   echo "Active Wayland session detected. Launching directly..."
-  "$RUNNER"
+  "${LAUNCH_CMD[@]}"
 else
   # 커널 하드웨어 DRM 노드가 없는 기기(Allwinner H700 BSP 등)를 위한 가상 DRM 노드 보장
   $ESUDO mkdir -p /dev/dri

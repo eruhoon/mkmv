@@ -20,7 +20,7 @@ An all-in-one universal runner and shared runtime architecture for seamlessly la
 * **Atomic Safe-Save Protection**: Hardware-level SD card physical fsync flush, isolated `.bak` backups (`save/.bak/`), and automatic corrupted 0-byte save restoration.
 * **Sleep/Resume Audio Recovery**: Automatic WebAudio context recovery ensures sound never freezes after device sleep or standby.
 * **Universal CJK Fallback Fonts**: Bundled `Noto Sans CJK KR` auto-injection eliminates missing Korean/Japanese glyphs and tofu (□) characters.
-* **Low-Memory Protection for 1GB RAM Devices**: 512MB compressed ZRAM dynamic swap, `MALLOC_ARENA_MAX=1`, V8 heap capping, and scene-transition GC triggers prevent Out-Of-Memory (OOM) crashes on budget handhelds.
+* **Dynamic Performance Profiles & Hardware GPU Acceleration**: Auto-detects device RAM and hardware capability (`auto`, `high`, `medium`, `low`). Automatically activates Mali-G52 hardware WebGL acceleration and balanced V8 heap on capable devices (RG Vita Pro / RK3576), with intelligent thermal CPU frequency capping to prevent overheating on passively cooled handhelds, while maintaining lightweight 128MB low-memory protection and CPU rendering for budget 1GB devices.
 * **Dual Engine Support**: Separate isolated layouts and hooks supporting both RPG Maker MV (`www/`) and RPG Maker MZ (`game/`).
 
 ---

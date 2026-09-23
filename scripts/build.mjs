@@ -151,14 +151,14 @@ async function build() {
         forceDeviceScaleFactor: 1.0,
         scaling: 'fit',
         pixelated: true,
-        disableGpu: true,
         hideCursor: false,
         disableTouch: false,
         showFps: false,
         debugKeymap: false,
+        disableNativeGamepad: true,
         fastForward: true,
         fastForwardSpeed: 2,
-        lowMemoryMode: true
+        performanceProfile: 'auto'
       }, null, 2);
 
   // 6. Build template.zip for Runtime Package (평소 파일/더미 런처 노출 방지)

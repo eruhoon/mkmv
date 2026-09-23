@@ -6,7 +6,6 @@
   "forceDeviceScaleFactor": 1.0,
   "scaling": "fit",
   "pixelated": true,
-  "disableGpu": true,
   "hideCursor": false,
   "disableTouch": false,
   "showFps": false,
@@ -14,5 +13,5 @@
   "disableNativeGamepad": true,
   "fastForward": true,
   "fastForwardSpeed": 2,
-  "lowMemoryMode": true
+  "performanceProfile": "auto"
 }

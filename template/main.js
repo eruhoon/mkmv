@@ -120,51 +120,16 @@ for (const arg of process.argv) {
   }
 }
 
-// 사용자 정의 옵션 (config.json / mkmv.json) 로드
-let opt = {
-  width: 1920,
-  height: 1080,
-  fullscreen: true,
-  autoDetectResolution: true,
-  forceDeviceScaleFactor: 1.0,
-  pixelated: true,
-  scaling: 'fit',
-  disableGpu: true,
-  hideCursor: false,
-  disableTouch: false,
-  showFps: false,
-  fastForward: true,
-  fastForwardSpeed: 2,
-  lowMemoryMode: true
-};
-
-// 1. 런타임 기본 설정 로드 (mkmv.json 기본, config.json 호환 폴백)
-try {
-  const runtimeMkmv = path.join(runtimeDir, 'mkmv.json');
-  const runtimeConfig = path.join(runtimeDir, 'config.json');
-  if (fs.existsSync(runtimeMkmv)) {
-    opt = Object.assign(opt, JSON.parse(fs.readFileSync(runtimeMkmv, 'utf8')));
-  } else if (fs.existsSync(runtimeConfig)) {
-    opt = Object.assign(opt, JSON.parse(fs.readFileSync(runtimeConfig, 'utf8')));
-  }
-} catch (e) {
-  console.error('[mkmv] runtime mkmv.json load error:', e);
-}
-
-// 2. 게임별 커스텀 설정 로드 (mkmv.json 기본, config.json 호환 폴백)
-try {
-  const gameMkmvJson = path.join(gameRootDir, 'mkmv.json');
-  const gameConfigJson = path.join(gameRootDir, 'config.json');
-  if (fs.existsSync(gameMkmvJson)) {
-    console.log('[mkmv] Loaded game-specific config from mkmv.json');
-    opt = Object.assign(opt, JSON.parse(fs.readFileSync(gameMkmvJson, 'utf8')));
-  } else if (gameRootDir !== runtimeDir && fs.existsSync(gameConfigJson)) {
-    console.log('[mkmv] Loaded game-specific config from legacy config.json');
-    opt = Object.assign(opt, JSON.parse(fs.readFileSync(gameConfigJson, 'utf8')));
-  }
-} catch (e) {
-  console.error('[mkmv] game mkmv.json load error:', e);
-}
+// The same configuration resolver is used by preload.
+const { loadConfig } = require(path.join(__dirname, 'modules', 'config.js'));
+const opt = loadConfig(runtimeDir, gameRootDir);
+console.log('[mkmv] Effective performance settings:', JSON.stringify({
+  performanceProfile: opt.effectiveProfile,
+  lowMemoryMode: opt.lowMemoryMode,
+  maxOldSpaceSize: opt.maxOldSpaceSize,
+  gcIntervalSeconds: opt.gcIntervalSeconds,
+  disableGpu: opt.disableGpu
+}));
 
 // 알만툴 MV / MZ 게임 디렉토리 격리 감지 (game/ 우선, 그 다음 www/, 최후 폴백으로 루트)
 function detectGameDirectory(baseDir) {
@@ -197,17 +162,17 @@ try {
   process.chdir(gameDir);
 } catch (e) {}
 
-// 저사양 1GB 기기용 메모리 최적화 및 V8 힙 제한 (OOM 킬러 원천 방지)
-const maxHeap = Number(opt.maxOldSpaceSize) || (opt.lowMemoryMode ? 128 : 384);
+// V8 힙 제한 및 메모리 최적화
+const maxHeap = Number(opt.maxOldSpaceSize) || (opt.lowMemoryMode ? 128 : 512);
 console.log(`[mkmv] Memory configuration: maxOldSpaceSize=${maxHeap}MB, lowMemoryMode=${opt.lowMemoryMode !== false}`);
 app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${maxHeap} --expose-gc`);
 
 if (opt.lowMemoryMode) {
-  // 1GB RAM 기기(H700, RK3326, RK3566 등)를 위한 크로미움 프로세스 및 캐시 제약
+  // 1GB RAM 저사양 기기(H700, RK3326 등)를 위한 크로미움 프로세스 및 캐시 제약
   app.commandLine.appendSwitch('renderer-process-limit', '1');
   app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-  app.commandLine.appendSwitch('disk-cache-size', '1048576');
-  app.commandLine.appendSwitch('media-cache-size', '1048576');
+  app.commandLine.appendSwitch('disk-cache-size', String(opt.diskCacheSize || 1048576));
+  app.commandLine.appendSwitch('media-cache-size', String(opt.mediaCacheSize || 1048576));
   // 백그라운드 태스크 및 네이티브 메모리 다이어트
   app.commandLine.appendSwitch('disable-background-networking');
   app.commandLine.appendSwitch('disable-breakpad');
@@ -216,12 +181,22 @@ if (opt.lowMemoryMode) {
   app.commandLine.appendSwitch('disable-sync');
   app.commandLine.appendSwitch('disable-translate');
   app.commandLine.appendSwitch('disable-features', 'AudioServiceSandbox,MediaRouter,PaintHolding');
+} else {
+  // 중/고사양 기기 (RG Vita Pro, RK3576, 2GB+ RAM): 넉넉한 캐시로 끊김 없는 에셋 로딩
+  if (opt.rendererProcessLimit) {
+    app.commandLine.appendSwitch('renderer-process-limit', String(opt.rendererProcessLimit));
+  }
+  if (opt.diskCacheSize) {
+    app.commandLine.appendSwitch('disk-cache-size', String(opt.diskCacheSize));
+  }
+  if (opt.mediaCacheSize) {
+    app.commandLine.appendSwitch('media-cache-size', String(opt.mediaCacheSize));
+  }
 }
 
-
-// Wayland & Ozone platform settings
+// Wayland & Ozone platform settings + Out-of-process crash 방지를 위한 In-process Network Service
 app.commandLine.appendSwitch('ozone-platform', 'wayland');
-app.commandLine.appendSwitch('enable-features', 'UseOzonePlatform');
+app.commandLine.appendSwitch('enable-features', 'UseOzonePlatform,NetworkServiceInProcess');
 
 // High-DPI & Scale factor settings (고해상도 디스플레이에서 배율 왜곡 방지)
 app.commandLine.appendSwitch('high-dpi-support', '1');
@@ -229,18 +204,22 @@ if (opt.forceDeviceScaleFactor) {
   app.commandLine.appendSwitch('force-device-scale-factor', String(opt.forceDeviceScaleFactor));
 }
 
-// Hardware acceleration & GL settings (Mali-G52 세그폴트 방지)
+// Hardware acceleration & GL settings
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 app.commandLine.appendSwitch('no-sandbox');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
-if (opt.disableGpu !== false) {
-  // Mali Bifrost(RK3576) Wayland 드라이버 세그폴트 방지: 안정적인 CPU 렌더링 모드
+if (opt.disableGpu) {
+  // 소프트웨어 CPU 렌더링 모드
   app.commandLine.appendSwitch('disable-gpu');
   app.commandLine.appendSwitch('disable-gpu-compositing');
+  app.commandLine.appendSwitch('disable-gpu-rasterization');
 } else {
+  // 네이티브 하드웨어 GPU 가속 모드 (Mali-G52 WebGL 고속 렌더링)
   app.commandLine.appendSwitch('disable-gpu-sandbox');
   app.commandLine.appendSwitch('ignore-gpu-blocklist');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
 }
 
 function createWindow() {
