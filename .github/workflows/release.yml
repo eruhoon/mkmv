@@ -31,7 +31,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
 
-      - name: Build PortMaster package
+      - name: Run tests
+        run: pnpm test
+
+      - name: Cache Electron runtime
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: electron-v22.3.27-linux-arm64
+
+      - name: Build PortMaster packages (release + debug)
         run: pnpm run build
 
       - name: Create GitHub Release
