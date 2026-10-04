@@ -188,6 +188,8 @@ function setupNwShim(options = {}) {
     window.nw = nwShim;
     window.nwGui = nwShim;
     window.greenworks = greenworksShim;
+    window.PluginManagerEx = window.PluginManagerEx || { registerCommand: () => {} };
+    window.Skill_Sequencer = window.Skill_Sequencer || function() {};
   }
 
   blockWindowResize();

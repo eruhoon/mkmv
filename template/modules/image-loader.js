@@ -81,10 +81,10 @@ function setupCanvasOptimization() {
 
 function setupBitmapGuard() {
   const patchGuard = () => {
-    if (window.Bitmap && window.Bitmap.prototype) {
+    if (typeof window !== 'undefined' && window.Bitmap && window.Bitmap.prototype) {
       if (!window.Bitmap.prototype._mkmvSafeOnError) {
         window.Bitmap.prototype._mkmvSafeOnError = true;
-        const origOnError = window.Bitmap.prototype._onError;
+
         window.Bitmap.prototype._onError = function() {
           if (this._image) {
             try {
@@ -93,10 +93,20 @@ function setupBitmapGuard() {
             } catch (e) {}
           }
           this._loadingState = 'error';
-          if (origOnError) {
-            try { origOnError.apply(this, arguments); } catch (e) {}
-          }
         };
+
+        const origOnLoad = window.Bitmap.prototype._onLoad;
+        if (origOnLoad) {
+          window.Bitmap.prototype._onLoad = function() {
+            if (this._image) {
+              try {
+                this._image.removeEventListener('load', this._loadListener);
+                this._image.removeEventListener('error', this._errorListener);
+              } catch (e) {}
+            }
+            return origOnLoad.apply(this, arguments);
+          };
+        }
 
         // getPixel / getAlphaPixel 부동소수점/NaN/범위초과 가드 (플러그인 충돌 방지 및 MZ context 호환)
         const origGetPixel = window.Bitmap.prototype.getPixel;
@@ -144,7 +154,7 @@ function setupBitmapGuard() {
     const timer = setInterval(() => {
       if (patchGuard()) clearInterval(timer);
     }, 50);
-    setTimeout(() => clearInterval(timer), 15000);
+    setTimeout(() => clearInterval(timer), 60000);
   }
 }
 

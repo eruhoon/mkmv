@@ -48,13 +48,201 @@ function setupTouchControls(userOpt) {
   logger.debug('Touch input disabled via config');
 }
 
-function setupNativeGamepadConflictResolver(userOpt) {
-  if (userOpt && userOpt.disableNativeGamepad === false) {
-    logger.debug('Native Gamepad API active (disableNativeGamepad: false)');
-    return;
+// ==============================================================================
+// 컨트롤러 기기별 프로필 정의 (Anbernic RG DS, Standard W3C Xbox/PS 등)
+// ==============================================================================
+const CONTROLLER_PROFILES = {
+  // Anbernic RG DS (Single ADC Joypad, ROCKNIX / AmberELEC 등 리눅스 임베디드 기기)
+  retrogame_joypad: {
+    name: 'Anbernic RG DS (retrogame_joypad)',
+    buttons: {
+      0:  { action: 'cancel', key: 'x',          code: 88, display: 'B' },
+      1:  { action: 'ok',     key: 'z',          code: 90, display: 'A' },
+      2:  { action: 'shift',  key: 'Shift',      code: 16, display: 'X' },
+      3:  { action: 'menu',   key: ' ',          code: 32, display: 'Y' },
+      4:  { action: 'pageup', key: 'PageUp',     code: 33, display: 'L1' },
+      5:  { action: 'pagedown',key: 'PageDown',  code: 34, display: 'R1' },
+      6:  { action: 'pageup', key: 'q',          code: 81, display: 'L2' },
+      7:  { action: 'pagedown',key: 'w',         code: 87, display: 'R2' },
+      8:  { action: 'escape', key: 'Escape',     code: 27, display: 'SELECT' },
+      9:  { action: 'ok',     key: 'Enter',      code: 13, display: 'START' },
+      13: { action: 'up',     key: 'ArrowUp',    code: 38, display: 'DPAD_UP' },
+      14: { action: 'down',   key: 'ArrowDown',  code: 40, display: 'DPAD_DOWN' },
+      15: { action: 'left',   key: 'ArrowLeft',  code: 37, display: 'DPAD_LEFT' },
+      16: { action: 'right',  key: 'ArrowRight', code: 39, display: 'DPAD_RIGHT' }
+    }
+  },
+  // 표준 W3C Gamepad 레이아웃 (Xbox 360 / RG VITA PRO / 일반 USB 패드 등)
+  standard: {
+    name: 'Standard Gamepad (Xbox/Standard Layout)',
+    buttons: {
+      0:  { action: 'ok',     key: 'z',          code: 90, display: 'A' },
+      1:  { action: 'cancel', key: 'x',          code: 88, display: 'B' },
+      2:  { action: 'shift',  key: 'Shift',      code: 16, display: 'X' },
+      3:  { action: 'menu',   key: ' ',          code: 32, display: 'Y' },
+      4:  { action: 'pageup', key: 'PageUp',     code: 33, display: 'L1' },
+      5:  { action: 'pagedown',key: 'PageDown',  code: 34, display: 'R1' },
+      6:  { action: 'pageup', key: 'q',          code: 81, display: 'L2' },
+      7:  { action: 'pagedown',key: 'w',         code: 87, display: 'R2' },
+      8:  { action: 'escape', key: 'Escape',     code: 27, display: 'SELECT' },
+      9:  { action: 'ok',     key: 'Enter',      code: 13, display: 'START' },
+      12: { action: 'up',     key: 'ArrowUp',    code: 38, display: 'DPAD_UP' },
+      13: { action: 'down',   key: 'ArrowDown',  code: 40, display: 'DPAD_DOWN' },
+      14: { action: 'left',   key: 'ArrowLeft',  code: 37, display: 'DPAD_LEFT' },
+      15: { action: 'right',  key: 'ArrowRight', code: 39, display: 'DPAD_RIGHT' }
+    }
+  }
+};
+
+function resolveGamepadProfile(gamepad, userOpt = {}) {
+  if (userOpt.gamepadProfile && CONTROLLER_PROFILES[userOpt.gamepadProfile]) {
+    return CONTROLLER_PROFILES[userOpt.gamepadProfile];
+  }
+  const id = (gamepad && gamepad.id ? gamepad.id.toLowerCase() : '');
+  if (id.includes('retrogame_joypad') || id.includes('484b') || id.includes('singleadc')) {
+    return CONTROLLER_PROFILES.retrogame_joypad;
+  }
+  return CONTROLLER_PROFILES.standard;
+}
+
+// 가상 키보드 이벤트 생성 및 알만툴 Input 엔진 직접 주입
+function triggerInput(actionName, pressed, keyName, keyCode) {
+  let ev = null;
+  try {
+    ev = new KeyboardEvent(pressed ? 'keydown' : 'keyup', {
+      key: keyName,
+      code: keyName,
+      bubbles: true,
+      cancelable: true
+    });
+    Object.defineProperty(ev, 'keyCode', { get: () => keyCode });
+    Object.defineProperty(ev, 'which', { get: () => keyCode });
+  } catch (e) {}
+
+  // 알만툴 MV / MZ 내장 Input 엔진 상태 1:1 동기화
+  if (typeof window !== 'undefined' && window.Input) {
+    if (window.Input._currentState) {
+      window.Input._currentState[actionName] = pressed;
+      if (pressed) {
+        window.Input._latestButton = actionName;
+        window.Input._pressedTime = 0;
+        window.Input._date = Date.now();
+      }
+    }
   }
 
-  // 1. Web Gamepad API 격리 (게임 엔진 및 외부 플러그인에 빈 게임패드 목록 반환)
+  if (ev) {
+    if (typeof document !== 'undefined' && document.dispatchEvent) {
+      document.dispatchEvent(ev);
+    }
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      window.dispatchEvent(ev);
+    }
+  }
+}
+
+function setupNativeGamepadConflictResolver(userOpt) {
+  // 알만툴 MV / MZ 내장 Input 게임패드 폴러 무력화 (기기별 오동작 방지)
+  function patchInputGamepad(inputObj) {
+    if (!inputObj || inputObj._mkmvGamepadNeutralized) return;
+    inputObj._mkmvGamepadNeutralized = true;
+
+    inputObj._pollGamepads = function() {};
+    if (typeof inputObj._updateGamepadState === 'function') {
+      inputObj._updateGamepadState = function() {};
+    }
+    logger.debug('Neutralized Input._pollGamepads for conflict-free unified input');
+  }
+
+  const inputTimer = setInterval(() => {
+    if (typeof window !== 'undefined' && window.Input) {
+      patchInputGamepad(window.Input);
+      clearInterval(inputTimer);
+    }
+  }, 10);
+  setTimeout(() => clearInterval(inputTimer), 30000);
+
+  // 스마트 하드웨어 게임패드 엔진 (Wayland/Sway 가상키보드 격리 및 D-Pad 번호 파편화 극복)
+  const activeStates = new Map();
+  let lastLoggedId = '';
+
+  function pollHardwareGamepads() {
+    if (!origNativeGetGamepads) return;
+    try {
+      const pads = origNativeGetGamepads();
+      for (let i = 0; i < pads.length; i++) {
+        const pad = pads[i];
+        if (!pad || !pad.connected) continue;
+
+        const profile = resolveGamepadProfile(pad, userOpt);
+        if (pad.id !== lastLoggedId) {
+          lastLoggedId = pad.id;
+          logger.info(`Hardware Gamepad #${i} recognized: "${pad.id}" -> Profile: ${profile.name}`);
+        }
+
+        // 1. 버튼 검사
+        const buttons = Object.assign({}, profile.buttons, (userOpt && userOpt.gamepadMapping) || {});
+        for (const [btnIdxStr, def] of Object.entries(buttons)) {
+          const btnIdx = Number(btnIdxStr);
+          const btn = pad.buttons[btnIdx];
+          const isPressed = btn ? (btn.pressed || btn.value > 0.4) : false;
+          const keyId = `pad_${i}_btn_${btnIdx}`;
+          const wasPressed = activeStates.get(keyId) || false;
+
+          if (isPressed && !wasPressed) {
+            activeStates.set(keyId, true);
+            triggerInput(def.action, true, def.key, def.code);
+          } else if (!isPressed && wasPressed) {
+            activeStates.set(keyId, false);
+            triggerInput(def.action, false, def.key, def.code);
+          }
+        }
+
+        // 2. 아날로그 스틱 검사 (데드존 0.5)
+        const axX = (pad.axes && pad.axes[0]) || 0;
+        const axY = (pad.axes && pad.axes[1]) || 0;
+        const sUp = axY < -0.5;
+        const sDown = axY > 0.5;
+        const sLeft = axX < -0.5;
+        const sRight = axX > 0.5;
+
+        const stickDefs = [
+          { id: `pad_${i}_s_up`,    active: sUp,    action: 'up',    key: 'ArrowUp',   code: 38 },
+          { id: `pad_${i}_s_down`,  active: sDown,  action: 'down',  key: 'ArrowDown', code: 40 },
+          { id: `pad_${i}_s_left`,  active: sLeft,  action: 'left',  key: 'ArrowLeft', code: 37 },
+          { id: `pad_${i}_s_right`, active: sRight, action: 'right', key: 'ArrowRight',code: 39 }
+        ];
+
+        for (const s of stickDefs) {
+          const wasActive = activeStates.get(s.id) || false;
+          if (s.active && !wasActive) {
+            activeStates.set(s.id, true);
+            triggerInput(s.action, true, s.key, s.code);
+          } else if (!s.active && wasActive) {
+            activeStates.set(s.id, false);
+            triggerInput(s.action, false, s.key, s.code);
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 폴링 루프 가동 (requestAnimationFrame 기반 고주사율 폴링 + setInterval 백업)
+  let pollRunning = true;
+  function rafLoop() {
+    if (!pollRunning) return;
+    pollHardwareGamepads();
+    if (typeof requestAnimationFrame !== 'undefined') {
+      requestAnimationFrame(rafLoop);
+    }
+  }
+  if (typeof requestAnimationFrame !== 'undefined') {
+    requestAnimationFrame(rafLoop);
+  } else {
+    setInterval(pollHardwareGamepads, 16);
+  }
+
+  // 외부 게임 스크립트/플러그인 충돌 방지를 위한 Web Gamepad API 반환 격리
   try {
     Object.defineProperty(navigator, 'getGamepads', {
       configurable: true,
@@ -67,31 +255,7 @@ function setupNativeGamepadConflictResolver(userOpt) {
     try { navigator.getGamepads = () => []; } catch (err) {}
   }
 
-  // 2. 알만툴 MV / MZ 내장 Input 게임패드 폴러 무력화
-  function patchInputGamepad(inputObj) {
-    if (!inputObj || inputObj._mkmvGamepadNeutralized) return;
-    inputObj._mkmvGamepadNeutralized = true;
-
-    inputObj._pollGamepads = function() {
-      // gptokeyb와의 이중 입력 및 _latestButton 덮어쓰기 방지 (no-op)
-    };
-    if (typeof inputObj._updateGamepadState === 'function') {
-      inputObj._updateGamepadState = function() {};
-    }
-    logger.debug('Neutralized Input._pollGamepads for gptokeyb harmony');
-  }
-
-  let inputHooked = false;
-  const inputTimer = setInterval(() => {
-    if (window.Input) {
-      patchInputGamepad(window.Input);
-      inputHooked = true;
-      clearInterval(inputTimer);
-    }
-  }, 10);
-  setTimeout(() => clearInterval(inputTimer), 30000);
-
-  logger.debug('Native Gamepad API isolated successfully (gptokeyb single-source mode)');
+  logger.debug('Smart Hardware Gamepad Engine installed successfully (universal profile mode)');
 }
 
 function setupKeymapDebugOverlay(userOpt) {
@@ -464,5 +628,8 @@ function setupInputModule(options = {}) {
 }
 
 module.exports = {
-  setupInputModule
+  setupInputModule,
+  CONTROLLER_PROFILES,
+  resolveGamepadProfile,
+  triggerInput
 };
