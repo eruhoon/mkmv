@@ -1,6 +1,6 @@
 {
   "name": "mkmv",
-  "version": "0.4.1.0",
+  "version": "0.4.2.0",
   "description": "PortMaster Runner for RPG Maker MV HTML5 games",
   "main": "template/main.js",
   "type": "module",
