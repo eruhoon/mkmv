@@ -92,3 +92,58 @@ test('setupVirtualFs enables atomic save on writeFileSync for save files', () =>
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test('setupVirtualFs with isMZ redirects save writes and migrates legacy saves', () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mkmv-test-mz-root-'));
+  const gameDir = path.join(rootDir, 'game');
+  const legacySaveDir = path.join(gameDir, 'save');
+  const rootSaveDir = path.join(rootDir, 'save');
+
+  fs.mkdirSync(legacySaveDir, { recursive: true });
+
+  // 1. Create a legacy save file in game/save/
+  const legacyFile = path.join(legacySaveDir, 'file0.rmmzsave');
+  fs.writeFileSync(legacyFile, 'legacy-autosave-data', 'utf8');
+
+  // 2. Initialize virtual fs with isMZ = true
+  setupVirtualFs({ gameDir, gameRootDir: rootDir, isMZ: true });
+
+  // 3. Verify legacy file was migrated to root save/
+  const migratedFile = path.join(rootSaveDir, 'file0.rmmzsave');
+  assert.equal(fs.existsSync(migratedFile), true, 'legacy file should be migrated to root save/');
+  assert.equal(fs.readFileSync(migratedFile, 'utf8'), 'legacy-autosave-data');
+
+  // 4. Verify writing to game/save/ redirects to root save/
+  const newSaveTarget = path.join(legacySaveDir, 'file1.rmmzsave');
+  fs.writeFileSync(newSaveTarget, 'new-slot1-data', 'utf8');
+
+  const rootSlot1 = path.join(rootSaveDir, 'file1.rmmzsave');
+  assert.equal(fs.existsSync(rootSlot1), true, 'new save should be redirected to root save/');
+  assert.equal(fs.readFileSync(rootSlot1, 'utf8'), 'new-slot1-data');
+
+  // 5. Verify resolveCaseInsensitive / reading game/save/ resolves from root save/
+  assert.equal(fs.existsSync(newSaveTarget), true, 'should resolve existence via root save fallback');
+  assert.equal(fs.readFileSync(newSaveTarget, 'utf8'), 'new-slot1-data');
+
+  fs.rmSync(rootDir, { recursive: true, force: true });
+});
+
+test('setupVirtualFs in MV mode does not redirect to root save', () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mkmv-test-mv-root-'));
+  const gameDir = path.join(rootDir, 'www');
+  const wwwSaveDir = path.join(gameDir, 'save');
+  const rootSaveDir = path.join(rootDir, 'save');
+
+  fs.mkdirSync(wwwSaveDir, { recursive: true });
+
+  // MV mode: isMZ = false
+  setupVirtualFs({ gameDir, gameRootDir: rootDir, isMZ: false });
+
+  const mvSaveFile = path.join(wwwSaveDir, 'file1.rpgsave');
+  fs.writeFileSync(mvSaveFile, 'mv-save-data', 'utf8');
+
+  assert.equal(fs.existsSync(mvSaveFile), true);
+  assert.equal(fs.existsSync(path.join(rootSaveDir, 'file1.rpgsave')), false, 'MV save should remain in www/save');
+
+  fs.rmSync(rootDir, { recursive: true, force: true });
+});

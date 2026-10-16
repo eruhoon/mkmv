@@ -54,14 +54,14 @@ try {
   process.chdir(gameDir);
 } catch (e) {}
 
-// 가상 파일시스템(fs 패치, XHR/fetch 복구, DataManager 복구) 활성화
-setupVirtualFs({ gameDir });
-
-// 4. 사용자 정의 옵션 (mkmv.json / config.json) 로드
+// 4. 사용자 정의 옵션 (mkmv.json / config.json) 로드 및 엔진 감지
 const userOpt = loadConfig(runtimeDir, gameRootDir);
 const engineInfo = resolveEffectiveEngine(userOpt.engineVersion, gameDir, origExistsSync);
 const isMZ = engineInfo.isMZ;
 logger.info(`Engine detected: ${isMZ ? 'RPG Maker MZ' : 'RPG Maker MV'} (mode: ${engineInfo.mode})`);
+
+// 가상 파일시스템(fs 패치, XHR/fetch 복구, DataManager 복구, MZ 세이브 일원화) 활성화
+setupVirtualFs({ gameDir, gameRootDir, isMZ });
 
 if (!process.mainModule) {
   process.mainModule = { filename: path.join(gameDir, 'index.html') };

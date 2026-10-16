@@ -36,8 +36,17 @@ const origWriteSync = fs.writeSync;
 const origFsyncSync = fs.fsyncSync;
 const origCloseSync = fs.closeSync;
 const origMkdirSync = fs.mkdirSync;
+const origUnlinkSync = fs.unlinkSync;
 
 let activeGameDir = process.cwd();
+let activeGameRootDir = null;
+let activeIsMZ = false;
+
+function setActiveGameConfig(cfg = {}) {
+  if (cfg.gameDir) activeGameDir = cfg.gameDir;
+  if (cfg.gameRootDir) activeGameRootDir = cfg.gameRootDir;
+  if (typeof cfg.isMZ === 'boolean') activeIsMZ = cfg.isMZ;
+}
 
 function setActiveGameDir(dir) {
   if (dir) activeGameDir = dir;
@@ -45,6 +54,19 @@ function setActiveGameDir(dir) {
 
 function getActiveGameDir() {
   return activeGameDir;
+}
+
+function redirectMzSavePath(targetPath) {
+  if (!activeIsMZ || !activeGameRootDir || typeof targetPath !== 'string') return null;
+  const legacySaveDir = path.resolve(activeGameDir, 'save');
+  const targetSaveDir = path.resolve(activeGameRootDir, 'save');
+  const normalized = path.resolve(activeGameDir, targetPath);
+
+  if (normalized.startsWith(legacySaveDir)) {
+    const rel = path.relative(legacySaveDir, normalized);
+    return path.join(targetSaveDir, rel);
+  }
+  return null;
 }
 
 function detectGameDirectory(baseDir) {
@@ -161,6 +183,14 @@ function resolveCaseInsensitive(targetPath, baseDir = activeGameDir) {
       if (origExistsSync.call(fs, candidate)) {
         normalizedTarget = candidate;
       }
+    }
+  }
+
+  // MZ 엔진 전용: game/save/... 접근 시 포트 루트 save/ 폴더 우선 탐색
+  if (activeIsMZ && activeGameRootDir) {
+    const redirected = redirectMzSavePath(normalizedTarget);
+    if (redirected && origExistsSync.call(fs, redirected)) {
+      return redirected;
     }
   }
 
@@ -404,7 +434,16 @@ function patchFs(baseDir = activeGameDir) {
 
   // 세이브 파일 파손 방지 (원자적 쓰기 + 물리 SD 카드 fsync 플러시 + .bak 서브폴더 자동 백업)
   fs.writeFileSync = function(p, data, options) {
-    const resolvedPath = resolveCaseInsensitive(p, baseDir);
+    let resolvedPath = resolveCaseInsensitive(p, baseDir);
+
+    // MZ 엔진 전용: game/save/... 저장 시 포트 루트 save/ 로 리다이렉트
+    if (activeIsMZ && activeGameRootDir) {
+      const redirected = redirectMzSavePath(resolvedPath);
+      if (redirected) {
+        resolvedPath = redirected;
+      }
+    }
+
     const isSaveFile = typeof p === 'string' && (
       p.endsWith('.rpgsave') || 
       p.endsWith('.rmmzsave') || 
@@ -441,6 +480,24 @@ function patchFs(baseDir = activeGameDir) {
       }
     }
     return origWriteFileSync.call(fs, resolvedPath, data, options);
+  };
+
+  fs.renameSync = function(oldPath, newPath) {
+    let resolvedOld = resolveCaseInsensitive(oldPath, baseDir);
+    let resolvedNew = resolveCaseInsensitive(newPath, baseDir);
+    if (activeIsMZ && activeGameRootDir) {
+      resolvedOld = redirectMzSavePath(resolvedOld) || resolvedOld;
+      resolvedNew = redirectMzSavePath(resolvedNew) || resolvedNew;
+    }
+    return origRenameSync.call(fs, resolvedOld, resolvedNew);
+  };
+
+  fs.unlinkSync = function(p) {
+    let resolved = resolveCaseInsensitive(p, baseDir);
+    if (activeIsMZ && activeGameRootDir) {
+      resolved = redirectMzSavePath(resolved) || resolved;
+    }
+    return origUnlinkSync.call(fs, resolved);
   };
 }
 
@@ -484,18 +541,121 @@ function setupDataManagerRecovery(baseDir = activeGameDir) {
   if (hookTimer && hookTimer.unref) hookTimer.unref();
 }
 
+// 알만툴 MZ 세이브 경로를 포트 루트 save/ 로 일원화 및 레거시 세이브 마이그레이션
+function setupMzSaveManager(options = {}) {
+  const gameRootDir = options.gameRootDir || activeGameRootDir;
+  const gameDir = options.gameDir || activeGameDir;
+  if (!gameRootDir || !gameDir) return;
+
+  const targetSaveDir = path.resolve(gameRootDir, 'save');
+  const legacySaveDir = path.resolve(gameDir, 'save');
+
+  // 1. 포트 루트 save 디렉터리 보장
+  try {
+    if (!origExistsSync.call(fs, targetSaveDir)) {
+      origMkdirSync.call(fs, targetSaveDir, { recursive: true });
+    }
+  } catch (e) {}
+
+  // 2. 기존 game/save -> 루트 save 안전 마이그레이션 (기존 세이브 유실 방지)
+  try {
+    if (origExistsSync.call(fs, legacySaveDir)) {
+      const files = origReaddirSync.call(fs, legacySaveDir);
+      for (const file of files) {
+        if (file.endsWith('.rmmzsave') || file.endsWith('.rmmzsave.bak')) {
+          const src = path.join(legacySaveDir, file);
+          const dest = path.join(targetSaveDir, file);
+          if (!origExistsSync.call(fs, dest)) {
+            logger.info(`Migrating legacy save file: ${file} -> ${dest}`);
+            origCopyFileSync.call(fs, src, dest);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    logger.warn('Failed to migrate legacy save files:', e);
+  }
+
+  if (typeof window === 'undefined') return;
+
+  // 3. StorageManager 패치 함수
+  const saveDirPathWithSlash = targetSaveDir.endsWith(path.sep) ? targetSaveDir : (targetSaveDir + path.sep);
+  const patchSM = (sm) => {
+    if (!sm || sm._mkmvSaveHooked) return;
+    sm._mkmvSaveHooked = true;
+
+    sm.isLocalMode = function() {
+      return true;
+    };
+
+    sm.fileDirectoryPath = function() {
+      return saveDirPathWithSlash;
+    };
+
+    const origSaveToLocalFile = sm.saveToLocalFile;
+    sm.saveToLocalFile = function(saveName, zip) {
+      const filePath = this.filePath(saveName);
+      const dirPath = this.fileDirectoryPath();
+      return new Promise((resolve, reject) => {
+        try {
+          if (!origExistsSync.call(fs, dirPath)) {
+            origMkdirSync.call(fs, dirPath, { recursive: true });
+          }
+          fs.writeFileSync(filePath, zip, 'utf8');
+          logger.info(`[mkmv-mz] Save successful: ${filePath} (${zip ? zip.length : 0} bytes)`);
+          resolve();
+        } catch (err) {
+          logger.error(`[mkmv-mz] Save error for ${filePath}:`, err);
+          if (typeof origSaveToLocalFile === 'function') {
+            origSaveToLocalFile.call(this, saveName, zip).then(resolve).catch(reject);
+          } else {
+            reject(err);
+          }
+        }
+      });
+    };
+
+    logger.info(`Hooked StorageManager.fileDirectoryPath -> ${saveDirPathWithSlash}`);
+  };
+
+  if (window.StorageManager && typeof window.StorageManager.fileDirectoryPath === 'function') {
+    patchSM(window.StorageManager);
+  }
+
+  let smTimer = setInterval(() => {
+    if (window.StorageManager && typeof window.StorageManager.fileDirectoryPath === 'function') {
+      patchSM(window.StorageManager);
+      if (window.StorageManager._mkmvSaveHooked) {
+        clearInterval(smTimer);
+      }
+    }
+  }, 20);
+  const cleanupTimer = setTimeout(() => clearInterval(smTimer), 30000);
+  if (cleanupTimer && cleanupTimer.unref) cleanupTimer.unref();
+  if (smTimer && smTimer.unref) smTimer.unref();
+}
+
 function setupVirtualFs(options = {}) {
-  const { gameDir } = options;
+  const { gameDir, gameRootDir, isMZ } = options;
   if (gameDir) setActiveGameDir(gameDir);
+  if (gameRootDir || typeof isMZ === 'boolean') {
+    setActiveGameConfig({ gameDir, gameRootDir, isMZ });
+  }
 
   patchFs(activeGameDir);
   setupUniversalXhrRecovery(activeGameDir);
   setupDataManagerRecovery(activeGameDir);
+
+  if (activeIsMZ && activeGameRootDir) {
+    setupMzSaveManager({ gameRootDir: activeGameRootDir, gameDir: activeGameDir });
+  }
 }
 
 module.exports = {
   detectGameDirectory,
   setupVirtualFs,
+  setupMzSaveManager,
+  setActiveGameConfig,
   setActiveGameDir,
   getActiveGameDir,
   getCaseInsensitiveChild,
@@ -517,5 +677,6 @@ module.exports = {
   origWriteSync,
   origFsyncSync,
   origCloseSync,
-  origMkdirSync
+  origMkdirSync,
+  origUnlinkSync
 };
