@@ -17,16 +17,6 @@ const { createLogger } = require('./logger.js');
 const logger = createLogger('mkmv-image');
 
 function setupCanvasOptimization() {
-  try {
-    const origGetContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function(type, attributes) {
-      if (type === '2d') {
-        attributes = Object.assign({}, attributes, { willReadFrequently: true });
-      }
-      return origGetContext.call(this, type, attributes);
-    };
-  } catch (e) {}
-
   // CanvasRenderingContext2D getImageData / putImageData 안전 가드
   // Chromium 108+ Web IDL 엄격성: float / NaN / undefined 인자 전달 시
   // "Value is not of type 'long'" 예외가 발생하여 알만툴 인터프리터 및 렌더링이 중단되는 문제 방지
