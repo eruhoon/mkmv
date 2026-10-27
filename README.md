@@ -52,19 +52,19 @@ This project supports cross-platform automated builds powered by **Node.js (v20+
 
 ### 1. Run Automated Test Suites
 ```bash
-npm test
+pnpm test
 # or: node scripts/tests/run-all.cjs
 ```
-Runs 10 comprehensive test suites covering audio, font fallback, virtual fs, config, graphics, memory, NW.js shims, logger, and optimizer.
+Runs 11 comprehensive test suites covering audio, font fallback, virtual fs, config, graphics, memory, NW.js shims, logger, and optimizer.
 
 ### 2. Build Release and Debug Packages
 ```bash
 # Build both Release & Debug packages
-npm run build
+pnpm run build
 
 # Or build individually
-npm run build:release
-npm run build:debug
+pnpm run build:release
+pnpm run build:debug
 ```
 
 * Automatically downloads and caches the official Electron aarch64 runtime.
@@ -75,7 +75,7 @@ npm run build:debug
 
 ### 3. Clean Build Artifacts
 ```bash
-npm run clean
+pnpm run clean
 ```
 
 ---

@@ -264,9 +264,69 @@ function setupUniversalXhrRecovery(baseDir = activeGameDir) {
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
 
+  function fulfillXhr(targetXhr, resolvedPath) {
+    try {
+      const isArrayBuffer = targetXhr.responseType === 'arraybuffer';
+      const isJson = targetXhr.responseType === 'json';
+      const isBlob = targetXhr.responseType === 'blob';
+
+      let responseData;
+      let responseText = '';
+
+      if (isArrayBuffer) {
+        const buf = origReadFileSync.call(fs, resolvedPath);
+        responseData = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      } else if (isBlob) {
+        const buf = origReadFileSync.call(fs, resolvedPath);
+        responseData = new Blob([buf]);
+      } else {
+        responseText = origReadFileSync.call(fs, resolvedPath, 'utf8').replace(/^\uFEFF/, '');
+        if (isJson) {
+          try {
+            responseData = JSON.parse(responseText);
+          } catch (e) {
+            responseData = null;
+          }
+        } else {
+          responseData = responseText;
+        }
+      }
+
+      Object.defineProperty(targetXhr, 'readyState', { value: 4, writable: false, configurable: true });
+      Object.defineProperty(targetXhr, 'status', { value: 200, writable: false, configurable: true });
+      Object.defineProperty(targetXhr, 'statusText', { value: 'OK', writable: false, configurable: true });
+      Object.defineProperty(targetXhr, 'response', { value: responseData, writable: false, configurable: true });
+      if (!isArrayBuffer && !isBlob) {
+        Object.defineProperty(targetXhr, 'responseText', { value: responseText, writable: false, configurable: true });
+      }
+
+      if (typeof targetXhr.onreadystatechange === 'function') {
+        targetXhr.onreadystatechange();
+      }
+      targetXhr.dispatchEvent(new Event('readystatechange'));
+
+      if (typeof targetXhr.onload === 'function') {
+        targetXhr.onload();
+      }
+      targetXhr.dispatchEvent(new ProgressEvent('load'));
+
+      if (typeof targetXhr.onloadend === 'function') {
+        targetXhr.onloadend();
+      }
+      targetXhr.dispatchEvent(new ProgressEvent('loadend'));
+    } catch (err) {
+      logger.error('XHR direct fulfill error:', err);
+      if (typeof targetXhr.onerror === 'function') {
+        targetXhr.onerror();
+      }
+      targetXhr.dispatchEvent(new ProgressEvent('error'));
+    }
+  }
+
   XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
     this._mkmvMethod = (method || 'GET').toUpperCase();
     this._mkmvUrl = url;
+    this._mkmvAsync = async !== false;
     return origOpen.apply(this, arguments);
   };
 
@@ -280,64 +340,15 @@ function setupUniversalXhrRecovery(baseDir = activeGameDir) {
       const hasSpecial = /[^\x00-\x7F]/.test(url) || (resolved && /[^\x00-\x7F]/.test(resolved)) || url.includes('%');
 
       if (hasSpecial && exists) {
+        if (this._mkmvAsync === false) {
+          // 동기(Sync) XHR: send() 반환 즉시 결과가 준비되어야 하므로 즉시 채움
+          fulfillXhr(this, resolved);
+          return;
+        }
+        // 비동기(Async) XHR: 표준 비동기 이벤트 루프 시뮬레이션
         const self = this;
         setTimeout(() => {
-          try {
-            const isArrayBuffer = self.responseType === 'arraybuffer';
-            const isJson = self.responseType === 'json';
-            const isBlob = self.responseType === 'blob';
-
-            let responseData;
-            let responseText = '';
-
-            if (isArrayBuffer) {
-              const buf = origReadFileSync.call(fs, resolved);
-              responseData = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-            } else if (isBlob) {
-              const buf = origReadFileSync.call(fs, resolved);
-              responseData = new Blob([buf]);
-            } else {
-              responseText = origReadFileSync.call(fs, resolved, 'utf8').replace(/^\uFEFF/, '');
-              if (isJson) {
-                try {
-                  responseData = JSON.parse(responseText);
-                } catch (e) {
-                  responseData = null;
-                }
-              } else {
-                responseData = responseText;
-              }
-            }
-
-            Object.defineProperty(self, 'readyState', { value: 4, writable: false, configurable: true });
-            Object.defineProperty(self, 'status', { value: 200, writable: false, configurable: true });
-            Object.defineProperty(self, 'statusText', { value: 'OK', writable: false, configurable: true });
-            Object.defineProperty(self, 'response', { value: responseData, writable: false, configurable: true });
-            if (!isArrayBuffer && !isBlob) {
-              Object.defineProperty(self, 'responseText', { value: responseText, writable: false, configurable: true });
-            }
-
-            if (typeof self.onreadystatechange === 'function') {
-              self.onreadystatechange();
-            }
-            self.dispatchEvent(new Event('readystatechange'));
-
-            if (typeof self.onload === 'function') {
-              self.onload();
-            }
-            self.dispatchEvent(new ProgressEvent('load'));
-
-            if (typeof self.onloadend === 'function') {
-              self.onloadend();
-            }
-            self.dispatchEvent(new ProgressEvent('loadend'));
-          } catch (err) {
-            logger.error('XHR direct fulfill error:', err);
-            if (typeof self.onerror === 'function') {
-              self.onerror();
-            }
-            self.dispatchEvent(new ProgressEvent('error'));
-          }
+          fulfillXhr(self, resolved);
         }, 0);
         return;
       }

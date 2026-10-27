@@ -127,13 +127,21 @@ async function buildVariant(mode) {
   }
 
   // 2. 템플릿 에셋 및 설정 복사
-  const staticFiles = ['keymap.gptk', 'port.json', 'package.json', 'mkmv.json'];
+  const staticFiles = ['keymap.gptk', 'port.json', 'mkmv.json'];
   for (const file of staticFiles) {
     const src = path.join(TEMPLATE_DIR, file);
     const dest = path.join(portableAppDir, file);
     if (fs.existsSync(src)) {
       fs.copyFileSync(src, dest);
     }
+  }
+
+  // package.json 복사 시 루트 버전으로 메타데이터 자동 동기화
+  const templatePkgSrc = path.join(TEMPLATE_DIR, 'package.json');
+  if (fs.existsSync(templatePkgSrc)) {
+    const tPkg = JSON.parse(fs.readFileSync(templatePkgSrc, 'utf8'));
+    tPkg.version = pkg.version;
+    fs.writeFileSync(path.join(portableAppDir, 'package.json'), JSON.stringify(tPkg, null, 2) + '\n', 'utf8');
   }
 
   // 폰트, 설정, 라이브러리 디렉터리 복사
@@ -202,6 +210,7 @@ async function buildVariant(mode) {
   const launcherDest = path.join(DIST_DIR, isDebug ? 'mkmv-debug.sh' : 'mkmv.sh');
   let launcherRaw = fs.readFileSync(launcherSrc, 'utf8');
   launcherRaw = launcherRaw.replace(/__BUILD_MODE_PLACEHOLDER__/g, mode);
+  launcherRaw = launcherRaw.replace(/Version:\s*[0-9.]+/g, `Version: ${pkg.version}`);
   const launcherContent = normalizeUnixLF(launcherRaw);
   fs.writeFileSync(launcherDest, launcherContent, { encoding: 'utf8', flag: 'w' });
 

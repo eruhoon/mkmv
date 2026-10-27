@@ -147,3 +147,44 @@ test('setupVirtualFs in MV mode does not redirect to root save', () => {
 
   fs.rmSync(rootDir, { recursive: true, force: true });
 });
+
+test('setupUniversalXhrRecovery supports synchronous XHR for unicode assets', () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mkmv-test-xhr-'));
+  const testFile = path.join(rootDir, '테스트_데이터.json');
+  fs.writeFileSync(testFile, '{"key": "유니코드값"}', 'utf8');
+
+  class MockXHR {
+    constructor() {
+      this.readyState = 0;
+      this.status = 0;
+      this.statusText = '';
+      this.responseText = '';
+      this.response = '';
+    }
+    open(method, url, async) {}
+    send(body) {}
+    dispatchEvent(event) {}
+  }
+
+  global.XMLHttpRequest = MockXHR;
+  global.Event = class { constructor(type) { this.type = type; } };
+  global.ProgressEvent = class { constructor(type) { this.type = type; } };
+
+  const { setupUniversalXhrRecovery } = require(path.join(__dirname, '..', '..', 'template', 'modules', 'fs-virtual.js'));
+  setupUniversalXhrRecovery(rootDir);
+
+  const xhr = new global.XMLHttpRequest();
+  // 동기 XHR (async = false)
+  xhr.open('GET', '테스트_데이터.json', false);
+  xhr.send(null);
+
+  // send() 즉시 동기적으로 결과가 채워져 있어야 함
+  assert.equal(xhr.readyState, 4);
+  assert.equal(xhr.status, 200);
+  assert.equal(xhr.responseText, '{"key": "유니코드값"}');
+
+  delete global.XMLHttpRequest;
+  delete global.Event;
+  delete global.ProgressEvent;
+  fs.rmSync(rootDir, { recursive: true, force: true });
+});

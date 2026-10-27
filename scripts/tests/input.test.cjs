@@ -37,9 +37,14 @@ test('CONTROLLER_PROFILES mapping definitions are correct', () => {
   assert.equal(rgds[3].action, 'menu');   // Y (West)
   assert.equal(rgds[8].action, 'escape'); // Select
   assert.equal(rgds[9].action, 'ok');     // Start
+  assert.equal(rgds[11].action, 'r3');    // R3 (Fast Forward)
+  assert.equal(rgds[11].key, 'r');
 
   // Standard Gamepad indices
   const std = CONTROLLER_PROFILES.standard.buttons;
+  assert.equal(std[10].action, 'l3');
+  assert.equal(std[11].action, 'r3');    // R3 (Fast Forward)
+  assert.equal(std[11].key, 'r');
   assert.equal(std[12].action, 'up');
   assert.equal(std[13].action, 'down');
   assert.equal(std[14].action, 'left');

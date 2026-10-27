@@ -148,6 +148,18 @@ function setupBitmapGuard() {
   }
 }
 
+function bufferToImageSrc(buf, resolvedPath) {
+  const ext = path.extname(resolvedPath).toLowerCase().replace('.', '');
+  const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
+  if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+    try {
+      const blob = new Blob([buf], { type: mime });
+      return URL.createObjectURL(blob);
+    } catch (e) {}
+  }
+  return `data:${mime};base64,` + buf.toString('base64');
+}
+
 function setupResourceErrorLogger(gameDir) {
   const hookTimer = setInterval(() => {
     if (window.Graphics && typeof window.Graphics.printLoadingError === 'function') {
@@ -200,10 +212,8 @@ function setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFi
               const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
               if (!isRpgmvHeader) {
                 logger.verbose(`Direct loading Unicode image via Node.js fs: ${targetUrl}`);
-                const ext = path.extname(resolved).toLowerCase().replace('.', '');
-                const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
-                const dataUrl = `data:${mime};base64,` + buf.toString('base64');
-                return origRequestImage.call(this, dataUrl);
+                const imageSrc = bufferToImageSrc(buf, resolved);
+                return origRequestImage.call(this, imageSrc);
               }
             } catch (e) {
               logger.error('Direct image load error:', e);
@@ -234,11 +244,9 @@ function setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFi
                   const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
                   if (!isRpgmvHeader) {
                     logger.verbose(`Auto-recovering Unicode image via Node.js fs: ${retryUrl}`);
-                    const ext = path.extname(retryResolved).toLowerCase().replace('.', '');
-                    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
                     const targetImg = self._image || this || (e && e.target);
                     if (targetImg) {
-                      targetImg.src = `data:${mime};base64,` + buf.toString('base64');
+                      targetImg.src = bufferToImageSrc(buf, retryResolved);
                       return;
                     }
                   }
@@ -294,9 +302,7 @@ function setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origRe
         const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
         if (!isRpgmvHeader) {
           logger.verbose(`Direct loading Unicode HTMLImageElement: ${inputUrl}`);
-          const ext = path.extname(resolved).toLowerCase().replace('.', '');
-          const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
-          return `data:${mime};base64,` + buf.toString('base64');
+          return bufferToImageSrc(buf, resolved);
         }
       } catch (e) {
         logger.error('HTMLImageElement direct load failed:', e);
@@ -358,9 +364,7 @@ function setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origRe
               e.preventDefault();
               e.stopImmediatePropagation();
               logger.verbose(`Auto-recovering failed HTMLImageElement via Node.js fs: ${rawSrc}`);
-              const ext = path.extname(resolved).toLowerCase().replace('.', '');
-              const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
-              origSrcSet.call(target, `data:${mime};base64,` + buf.toString('base64'));
+              origSrcSet.call(target, bufferToImageSrc(buf, resolved));
               return;
             }
           } catch (err) {

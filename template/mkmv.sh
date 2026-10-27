@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # RPG Maker MV - PortMaster Official Universal Launcher Script
-# Version: 0.4.0
+# Version: 0.5.0
 # ==============================================================================
 
 # ⭐ [설정] 기본 게임 폴더명 (폴더명을 바꾸셨다면 아래 이름을 일치시켜 주세요)
@@ -25,20 +25,9 @@ else
 fi
 export MKMV_BUILD_MODE="$BUILD_MODE"
 
-# 1. 게임 폴더명 자동 감지 (공백 및 " - 부제" 포함 런처 파일명 완벽 지원)
-if [ -d "/$directory/ports/$SCRIPT_NAME" ]; then
-  GAME_CODE="$SCRIPT_NAME"
-elif [ -d "$SCRIPT_DIR/$SCRIPT_NAME" ]; then
-  GAME_CODE="$SCRIPT_NAME"
-elif [ -d "/$directory/ports/$CODE_PREFIX" ]; then
-  GAME_CODE="$CODE_PREFIX"
-elif [ -d "$SCRIPT_DIR/$CODE_PREFIX" ]; then
-  GAME_CODE="$CODE_PREFIX"
-fi
-
 XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
 
-# PortMaster header
+# PortMaster header (컨트롤 및 $directory 환경 변수를 조기 초기화)
 if [ -d "/opt/system/Tools/PortMaster/" ]; then
   controlfolder="/opt/system/Tools/PortMaster"
 elif [ -d "/opt/tools/PortMaster/" ]; then
@@ -52,6 +41,17 @@ fi
 source $controlfolder/control.txt
 [ -f "${controlfolder}/mod_${CFW_NAME}.txt" ] && source "${controlfolder}/mod_${CFW_NAME}.txt"
 get_controls
+
+# 1. 게임 폴더명 자동 감지 (공백 및 " - 부제" 포함 런처 파일명 완벽 지원)
+if [ -n "$directory" ] && [ -d "/$directory/ports/$SCRIPT_NAME" ]; then
+  GAME_CODE="$SCRIPT_NAME"
+elif [ -d "$SCRIPT_DIR/$SCRIPT_NAME" ]; then
+  GAME_CODE="$SCRIPT_NAME"
+elif [ -n "$directory" ] && [ -d "/$directory/ports/$CODE_PREFIX" ]; then
+  GAME_CODE="$CODE_PREFIX"
+elif [ -d "$SCRIPT_DIR/$CODE_PREFIX" ]; then
+  GAME_CODE="$CODE_PREFIX"
+fi
 
 # Directory setup (게임 데이터 디렉토리 감지)
 if [ -d "/$directory/ports/$GAME_CODE" ]; then
