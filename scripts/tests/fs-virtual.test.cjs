@@ -125,6 +125,30 @@ test('setupVirtualFs with isMZ redirects save writes and migrates legacy saves',
   assert.equal(fs.existsSync(newSaveTarget), true, 'should resolve existence via root save fallback');
   assert.equal(fs.readFileSync(newSaveTarget, 'utf8'), 'new-slot1-data');
 
+  // 6. Verify fs.readdirSync merges root save and legacy save
+  const readdirList = fs.readdirSync(legacySaveDir);
+  assert.equal(readdirList.includes('file0.rmmzsave'), true, 'readdir should include migrated file');
+  assert.equal(readdirList.includes('file1.rmmzsave'), true, 'readdir should include new save');
+
+  // 7. Verify StorageManager hooks & bidirectional load/exists
+  global.window = {};
+  const { setupMzSaveManager } = require(path.join(__dirname, '..', '..', 'template', 'modules', 'fs-virtual.js'));
+  setupMzSaveManager({ gameRootDir: rootDir, gameDir });
+
+  // Simulate window.StorageManager being loaded after setupMzSaveManager
+  global.window.StorageManager = {
+    filePath: function(saveName) { return this.fileDirectoryPath() + saveName + '.rmmzsave'; },
+    fileDirectoryPath: function() { return path.join(gameDir, 'save/'); },
+    fsReadFile: function(p) { return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null; },
+    fsWriteFile: function(p, d) { fs.writeFileSync(p, d); },
+    fsUnlink: function(p) { if (fs.existsSync(p)) fs.unlinkSync(p); }
+  };
+
+  assert.equal(global.window.StorageManager._mkmvSaveHooked, true, 'StorageManager should be hooked via setter');
+  assert.equal(global.window.StorageManager.localFileExists('file1'), true, 'localFileExists should find file1');
+  assert.equal(global.window.StorageManager.localFileExists('file0'), true, 'localFileExists should find file0');
+
+  delete global.window;
   fs.rmSync(rootDir, { recursive: true, force: true });
 });
 
