@@ -15,7 +15,10 @@
 function injectResolutionStyles(userOpt = {}) {
   if (typeof document === 'undefined') return;
 
-  const style = document.createElement('style');
+  const existing = typeof document.getElementById === 'function'
+    ? document.getElementById('mkmv-resolution-fix')
+    : null;
+  const style = existing || document.createElement('style');
   style.id = 'mkmv-resolution-fix';
   let cssText = `
     html, body {
@@ -27,6 +30,16 @@ function injectResolutionStyles(userOpt = {}) {
       background-color: #000000 !important;
     }
   `;
+  if (userOpt.hideCursor) {
+    cssText += `
+    html, body, canvas {
+      cursor: none !important;
+    }
+    #mkmv-settings-overlay, #mkmv-settings-overlay * {
+      cursor: auto !important;
+    }
+    `;
+  }
   if (userOpt.pixelated !== false) {
     cssText += `
     #GameCanvas, #UpperCanvas, canvas {
@@ -51,12 +64,14 @@ function injectResolutionStyles(userOpt = {}) {
     }
   `;
   style.textContent = cssText;
-  if (document.head) {
-    document.head.appendChild(style);
-  } else {
-    document.addEventListener('DOMContentLoaded', () => {
-      if (document.head) document.head.appendChild(style);
-    });
+  if (!existing) {
+    if (document.head) {
+      document.head.appendChild(style);
+    } else {
+      document.addEventListener('DOMContentLoaded', () => {
+        if (document.head) document.head.appendChild(style);
+      });
+    }
   }
 }
 
@@ -66,11 +81,11 @@ function patchGraphics(userOpt = {}) {
   window.Graphics._defaultStretchMode = function() { return true; };
   window.Graphics._stretchEnabled = true;
 
-  const isFillOrStretch = (userOpt.scaling === 'fill' || userOpt.scaling === 'stretch');
+  const isFillOrStretch = () => (userOpt.scaling === 'fill' || userOpt.scaling === 'stretch');
 
   window.Graphics._updateRealScale = function() {
     this._stretchEnabled = true;
-    if (isFillOrStretch) {
+    if (isFillOrStretch()) {
       this._realScale = 1;
     } else {
       const h = window.innerWidth / (this._width || 1);
@@ -88,7 +103,7 @@ function patchGraphics(userOpt = {}) {
     element.style.right = '0px';
     element.style.bottom = '0px';
 
-    if (isFillOrStretch) {
+    if (isFillOrStretch()) {
       element.style.width = window.innerWidth + 'px';
       element.style.height = window.innerHeight + 'px';
     } else {
@@ -101,20 +116,35 @@ function patchGraphics(userOpt = {}) {
     }
   };
 
-  if (isFillOrStretch) {
-    window.Graphics.pageToCanvasX = function(x) {
+  if (!window.Graphics._mkmvOrigPageToCanvasX) {
+    window.Graphics._mkmvOrigPageToCanvasX = window.Graphics.pageToCanvasX;
+    window.Graphics._mkmvOrigPageToCanvasY = window.Graphics.pageToCanvasY;
+  }
+
+  window.Graphics.pageToCanvasX = function(x) {
+    if (isFillOrStretch()) {
       if (this._canvas) {
         return Math.round(x * (this._width / window.innerWidth));
       }
       return 0;
-    };
-    window.Graphics.pageToCanvasY = function(y) {
+    }
+    if (typeof window.Graphics._mkmvOrigPageToCanvasX === 'function') {
+      return window.Graphics._mkmvOrigPageToCanvasX.apply(this, arguments);
+    }
+    return x;
+  };
+  window.Graphics.pageToCanvasY = function(y) {
+    if (isFillOrStretch()) {
       if (this._canvas) {
         return Math.round(y * (this._height / window.innerHeight));
       }
       return 0;
-    };
-  }
+    }
+    if (typeof window.Graphics._mkmvOrigPageToCanvasY === 'function') {
+      return window.Graphics._mkmvOrigPageToCanvasY.apply(this, arguments);
+    }
+    return y;
+  };
 
   if (typeof window.Graphics._updateAllElements === 'function' && window.Graphics._canvas && window.Graphics._errorPrinter) {
     window.Graphics._updateAllElements();
@@ -207,25 +237,25 @@ function patchMinimapOptimization() {
  * @param {object} userOpt
  * @param {function} nowFn 테스트용 타임스탬프 함수
  */
-function patchTargetFps(userOpt = {}, nowFn = null) {
+function installTargetFpsWrapper(userOpt, nowFn = null) {
   if (typeof window === 'undefined' || !window.Graphics) return false;
-  const targetFps = Number(userOpt.targetFps);
-  if (!Number.isFinite(targetFps) || targetFps < 10 || targetFps >= 60) {
-    return false;
-  }
   if (typeof window.Graphics.render !== 'function' || window.Graphics._mkmvTargetFpsPatched) {
-    return false;
+    return Boolean(window.Graphics._mkmvTargetFpsPatched);
   }
 
   const getNow = typeof nowFn === 'function'
     ? nowFn
     : () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
-  const frameIntervalMs = (1000 / targetFps) * 0.85;
   let lastRenderTime = 0;
 
   const origRender = window.Graphics.render;
   window.Graphics._mkmvTargetFpsPatched = true;
   window.Graphics.render = function(stage) {
+    const activeFps = Number(userOpt.targetFps);
+    if (!Number.isFinite(activeFps) || activeFps < 10 || activeFps >= 60) {
+      return origRender.apply(this, arguments);
+    }
+    const frameIntervalMs = (1000 / activeFps) * 0.85;
     const now = getNow();
     if (lastRenderTime === 0 || (now - lastRenderTime) >= frameIntervalMs) {
       lastRenderTime = now;
@@ -236,6 +266,24 @@ function patchTargetFps(userOpt = {}, nowFn = null) {
     }
   };
   return true;
+}
+
+function patchTargetFps(userOpt = {}, nowFn = null) {
+  if (typeof window === 'undefined' || !window.Graphics) return false;
+  const targetFps = Number(userOpt.targetFps);
+  if (!Number.isFinite(targetFps) || targetFps < 10 || targetFps >= 60) {
+    return false;
+  }
+  if (typeof window.Graphics.render !== 'function' || window.Graphics._mkmvTargetFpsPatched) {
+    return false;
+  }
+  return installTargetFpsWrapper(userOpt, nowFn);
+}
+
+function setTargetFps(userOpt, nextTargetFps) {
+  if (!userOpt) return false;
+  userOpt.targetFps = Number(nextTargetFps) || 60;
+  return installTargetFpsWrapper(userOpt);
 }
 
 function setupGraphicsModule(options = {}) {
@@ -314,5 +362,6 @@ module.exports = {
   patchGraphics,
   patchSpriteOptimization,
   patchMinimapOptimization,
-  patchTargetFps
+  patchTargetFps,
+  setTargetFps
 };

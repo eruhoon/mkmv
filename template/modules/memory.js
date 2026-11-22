@@ -14,28 +14,42 @@ const { createLogger } = require('./logger.js');
 const logger = createLogger('mkmv-mem');
 
 function setupFpsMeter(userOpt = {}) {
-  if (!userOpt.showFps || typeof window === 'undefined') return;
+  let visible = Boolean(userOpt.showFps);
+  if (typeof window === 'undefined') {
+    return {
+      isVisible: () => visible,
+      setVisible: (v) => {
+        visible = Boolean(v);
+        userOpt.showFps = visible;
+      }
+    };
+  }
 
   let activated = false;
+  let mvTimer = null;
+  let mvCleanup = null;
+  let fallbackTimer = null;
 
-  const hookMvMeter = () => {
-    if (window.Graphics) {
-      if (window.Graphics._modifyExistingElements) {
-        const origModify = window.Graphics._modifyExistingElements;
-        window.Graphics._modifyExistingElements = function() {
-          if (origModify) origModify.apply(this, arguments);
-          if (window.Graphics._fpsMeter && window.Graphics._fpsMeter.container) {
-            window.Graphics._fpsMeter.container.style.setProperty('z-index', '2147483640', 'important');
-          }
-          if (window.Graphics._modeBox) {
-            window.Graphics._modeBox.style.setProperty('z-index', '2147483639', 'important');
-          }
-        };
-      }
+  const applyMvMeterVisibility = (show) => {
+    if (!window.Graphics) return false;
+    if (window.Graphics._modifyExistingElements && !window.Graphics._mkmvFpsModifyHooked) {
+      window.Graphics._mkmvFpsModifyHooked = true;
+      const origModify = window.Graphics._modifyExistingElements;
+      window.Graphics._modifyExistingElements = function() {
+        if (origModify) origModify.apply(this, arguments);
+        if (window.Graphics._fpsMeter && window.Graphics._fpsMeter.container) {
+          window.Graphics._fpsMeter.container.style.setProperty('z-index', '2147483640', 'important');
+        }
+        if (window.Graphics._modeBox) {
+          window.Graphics._modeBox.style.setProperty('z-index', '2147483639', 'important');
+        }
+      };
+    }
 
-      if (window.Graphics._fpsMeter) {
-        try {
-          window.Graphics.showFps();
+    if (window.Graphics._fpsMeter) {
+      try {
+        if (show) {
+          if (typeof window.Graphics.showFps === 'function') window.Graphics.showFps();
           if (typeof window.Graphics._fpsMeter.showFps === 'function') {
             window.Graphics._fpsMeter.showFps();
           }
@@ -47,27 +61,79 @@ function setupFpsMeter(userOpt = {}) {
             window.Graphics._modeBox.style.setProperty('z-index', '2147483639', 'important');
             window.Graphics._modeBox.style.opacity = '1';
           }
-          activated = true;
-        } catch (e) {}
-      }
+        } else {
+          if (typeof window.Graphics.hideFps === 'function') window.Graphics.hideFps();
+          if (typeof window.Graphics._fpsMeter.hideFps === 'function') {
+            window.Graphics._fpsMeter.hideFps();
+          }
+          if (window.Graphics._fpsMeter.container) {
+            window.Graphics._fpsMeter.container.style.display = 'none';
+          }
+          if (window.Graphics._modeBox) {
+            window.Graphics._modeBox.style.opacity = '0';
+          }
+        }
+        activated = true;
+        return true;
+      } catch (e) {}
     }
+    return false;
   };
 
-  const mvTimer = setInterval(hookMvMeter, 100);
-  const mvCleanup = setTimeout(() => clearInterval(mvTimer), 25000);
-  if (mvCleanup && mvCleanup.unref) mvCleanup.unref();
-  if (mvTimer && mvTimer.unref) mvTimer.unref();
+  const startWatchers = () => {
+    if (mvTimer) return;
+    mvTimer = setInterval(() => {
+      if (!visible) return;
+      applyMvMeterVisibility(true);
+    }, 100);
+    mvCleanup = setTimeout(() => {
+      clearInterval(mvTimer);
+      mvTimer = null;
+    }, 25000);
+    if (mvCleanup && mvCleanup.unref) mvCleanup.unref();
+    if (mvTimer && mvTimer.unref) mvTimer.unref();
 
-  const fallbackTimer = setTimeout(() => {
-    if (!activated && (!window.Graphics || !window.Graphics._fpsMeter)) {
-      createFallbackFpsOverlay();
+    fallbackTimer = setTimeout(() => {
+      if (visible && !activated && (!window.Graphics || !window.Graphics._fpsMeter)) {
+        createFallbackFpsOverlay();
+      }
+    }, 6000);
+    if (fallbackTimer && fallbackTimer.unref) fallbackTimer.unref();
+  };
+
+  if (visible) {
+    startWatchers();
+  }
+
+  return {
+    isVisible: () => visible,
+    setVisible: (nextVisible) => {
+      visible = Boolean(nextVisible);
+      userOpt.showFps = visible;
+      if (visible) {
+        const hasMvMeter = applyMvMeterVisibility(true);
+        if (!hasMvMeter) {
+          createFallbackFpsOverlay();
+          const el = typeof document !== 'undefined' && document.getElementById('mkmv-fps-counter');
+          if (el) el.style.setProperty('display', 'block', 'important');
+        }
+      } else {
+        applyMvMeterVisibility(false);
+        const el = typeof document !== 'undefined' && document.getElementById('mkmv-fps-counter');
+        if (el) el.style.setProperty('display', 'none', 'important');
+      }
+      return visible;
     }
-  }, 6000);
-  if (fallbackTimer && fallbackTimer.unref) fallbackTimer.unref();
+  };
 }
 
 function createFallbackFpsOverlay() {
-  if (typeof document === 'undefined' || document.getElementById('mkmv-fps-counter')) return;
+  if (typeof document === 'undefined') return;
+  const existing = document.getElementById('mkmv-fps-counter');
+  if (existing) {
+    existing.style.setProperty('display', 'block', 'important');
+    return;
+  }
 
   const overlay = document.createElement('div');
   overlay.id = 'mkmv-fps-counter';
@@ -203,8 +269,9 @@ function setupLowMemoryManager(userOpt = {}) {
 
 function setupMemoryModule(options = {}) {
   const { userOpt = {} } = options;
-  setupFpsMeter(userOpt);
+  const fps = setupFpsMeter(userOpt);
   setupLowMemoryManager(userOpt);
+  return { fps };
 }
 
 module.exports = {

@@ -13,6 +13,7 @@ deadzone_delay = 16
 back = esc
 select = esc
 start = enter
+guide = m
 
 # Action Buttons (RPG Maker MV Standard)
 # A (Confirm / Action) -> Z

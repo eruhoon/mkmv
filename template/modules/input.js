@@ -27,9 +27,10 @@ function setupKeyGuards() {
 }
 
 function setupTouchControls(userOpt) {
-  if (!userOpt || !userOpt.disableTouch) return;
+  if (typeof window === 'undefined') return;
 
   const cancelTouch = (e) => {
+    if (!userOpt || !userOpt.disableTouch) return;
     e.preventDefault();
     e.stopPropagation();
   };
@@ -38,14 +39,16 @@ function setupTouchControls(userOpt) {
   window.addEventListener('touchend', cancelTouch, { capture: true, passive: false });
   window.addEventListener('touchcancel', cancelTouch, { capture: true, passive: false });
 
-  const touchTimer = setInterval(() => {
-    if (window.TouchInput) {
-      window.TouchInput._setupEventHandlers = function() {};
-      clearInterval(touchTimer);
-    }
-  }, 30);
-  setTimeout(() => clearInterval(touchTimer), 10000);
-  logger.debug('Touch input disabled via config');
+  if (userOpt && userOpt.disableTouch) {
+    const touchTimer = setInterval(() => {
+      if (window.TouchInput) {
+        window.TouchInput._setupEventHandlers = function() {};
+        clearInterval(touchTimer);
+      }
+    }, 30);
+    setTimeout(() => clearInterval(touchTimer), 10000);
+    logger.debug('Touch input disabled via config');
+  }
 }
 
 // ==============================================================================
@@ -95,6 +98,28 @@ const CONTROLLER_PROFILES = {
       14: { action: 'left',   key: 'ArrowLeft',  code: 37, display: 'DPAD_LEFT' },
       15: { action: 'right',  key: 'ArrowRight', code: 39, display: 'DPAD_RIGHT' }
     }
+  },
+  // 닌텐도 물리 배열 W3C Standard Gamepad (DualSense / Switch Pro / RGDS 등)
+  nintendo: {
+    name: 'Nintendo Standard Gamepad (A/B, X/Y Nintendo Layout)',
+    buttons: {
+      0:  { action: 'cancel',   key: 'x',          code: 88, display: 'B' },
+      1:  { action: 'ok',       key: 'z',          code: 90, display: 'A' },
+      2:  { action: 'menu',     key: ' ',          code: 32, display: 'Y' },
+      3:  { action: 'shift',    key: 'Shift',      code: 16, display: 'X' },
+      4:  { action: 'pageup',   key: 'PageUp',     code: 33, display: 'L1' },
+      5:  { action: 'pagedown', key: 'PageDown',   code: 34, display: 'R1' },
+      6:  { action: 'pageup',   key: 'q',          code: 81, display: 'L2' },
+      7:  { action: 'pagedown', key: 'w',          code: 87, display: 'R2' },
+      8:  { action: 'escape',   key: 'Escape',     code: 27, display: 'SELECT' },
+      9:  { action: 'ok',       key: 'Enter',      code: 13, display: 'START' },
+      10: { action: 'l3',       key: 'Control',    code: 17, display: 'L3' },
+      11: { action: 'r3',       key: 'r',          code: 82, display: 'R3' },
+      12: { action: 'up',       key: 'ArrowUp',    code: 38, display: 'DPAD_UP' },
+      13: { action: 'down',     key: 'ArrowDown',  code: 40, display: 'DPAD_DOWN' },
+      14: { action: 'left',     key: 'ArrowLeft',  code: 37, display: 'DPAD_LEFT' },
+      15: { action: 'right',    key: 'ArrowRight', code: 39, display: 'DPAD_RIGHT' }
+    }
   }
 };
 
@@ -123,8 +148,9 @@ function triggerInput(actionName, pressed, keyName, keyCode) {
     Object.defineProperty(ev, 'which', { get: () => keyCode });
   } catch (e) {}
 
-  // 알만툴 MV / MZ 내장 Input 엔진 상태 1:1 동기화
-  if (typeof window !== 'undefined' && window.Input) {
+  // 알만툴 MV / MZ 내장 Input 엔진 상태 1:1 동기화 (인앱 설정 메뉴가 열려 있을 때는 게임 입력 차단)
+  const menuOpen = typeof window !== 'undefined' && Boolean(window.__mkmvSettingsMenuOpen);
+  if (!menuOpen && typeof window !== 'undefined' && window.Input) {
     if (window.Input._currentState) {
       window.Input._currentState[actionName] = pressed;
       if (pressed) {
@@ -138,8 +164,7 @@ function triggerInput(actionName, pressed, keyName, keyCode) {
   if (ev) {
     if (typeof document !== 'undefined' && document.dispatchEvent) {
       document.dispatchEvent(ev);
-    }
-    if (typeof window !== 'undefined' && window.dispatchEvent) {
+    } else if (typeof window !== 'undefined' && window.dispatchEvent) {
       window.dispatchEvent(ev);
     }
   }
@@ -381,6 +406,7 @@ function setupKeymapDebugOverlay(userOpt) {
       overlay.style.setProperty('will-change', 'transform', 'important');
     }
 
+    overlay.style.setProperty('top', (userOpt && userOpt.showFps) ? '45px' : '15px', 'important');
     overlay.style.setProperty('display', isVisible ? 'block' : 'none', 'important');
     if (overlay.parentNode !== document.body || document.body.lastElementChild !== overlay) {
       document.body.appendChild(overlay);
@@ -495,12 +521,24 @@ function setupKeymapDebugOverlay(userOpt) {
     logger.debug('Keymap debug overlay enabled (debugKeymap: true)');
     ensureOverlay();
   }
+
+  return {
+    isVisible: () => isVisible,
+    setVisible: (nextVisible) => {
+      isVisible = Boolean(nextVisible);
+      if (userOpt) userOpt.debugKeymap = isVisible;
+      const el = ensureOverlay();
+      if (el) {
+        el.style.setProperty('display', isVisible ? 'block' : 'none', 'important');
+        if (isVisible) render();
+      }
+      return isVisible;
+    }
+  };
 }
 
 function setupFastForward(userOpt, isMZ) {
-  if (userOpt && userOpt.fastForward === false) return;
-
-  const speedMultiplier = Math.max(1, Number(userOpt && userOpt.fastForwardSpeed) || 2);
+  const getSpeedMultiplier = () => Math.max(1, Number(userOpt && userOpt.fastForwardSpeed) || 2);
   let isFastForward = false;
   let indicator = null;
 
@@ -528,8 +566,10 @@ function setupFastForward(userOpt, isMZ) {
       indicator.style.setProperty('box-shadow', '0 0 8px rgba(0, 229, 255, 0.4)', 'important');
       indicator.style.setProperty('pointer-events', 'none', 'important');
       indicator.style.setProperty('user-select', 'none', 'important');
-      indicator.textContent = `▶▶ ${speedMultiplier}x`;
+      indicator.textContent = `▶▶ ${getSpeedMultiplier()}x`;
       document.body.appendChild(indicator);
+    } else {
+      indicator.textContent = `▶▶ ${getSpeedMultiplier()}x`;
     }
     return indicator;
   }
@@ -540,10 +580,10 @@ function setupFastForward(userOpt, isMZ) {
     ensureIndicator();
   }
 
-  function toggleFastForward() {
-    isFastForward = !isFastForward;
+  function syncIndicator() {
     const badge = ensureIndicator();
     if (badge) {
+      badge.textContent = `▶▶ ${getSpeedMultiplier()}x`;
       badge.style.setProperty('display', isFastForward ? 'block' : 'none', 'important');
       if (isFastForward) {
         if (badge.style.zIndex !== '2147483647') {
@@ -554,10 +594,21 @@ function setupFastForward(userOpt, isMZ) {
         }
       }
     }
-    logger.debug(`Fast forward toggled: ${isFastForward ? `${speedMultiplier}x` : '1x'}`);
+  }
+
+  function toggleFastForward() {
+    if (userOpt && userOpt.fastForward === false) {
+      isFastForward = false;
+      syncIndicator();
+      return;
+    }
+    isFastForward = !isFastForward;
+    syncIndicator();
+    logger.debug(`Fast forward toggled: ${isFastForward ? `${getSpeedMultiplier()}x` : '1x'}`);
   }
 
   window.addEventListener('keydown', (e) => {
+    if (userOpt && userOpt.fastForward === false) return;
     const key = e.key ? e.key.toUpperCase() : '';
     const isR = key === 'R' || e.code === 'KeyR' || e.keyCode === 82;
     const isTab = key === 'TAB' || e.code === 'Tab' || e.keyCode === 9;
@@ -573,7 +624,8 @@ function setupFastForward(userOpt, isMZ) {
     if (window.SceneManager && window.SceneManager.updateMain) {
       const origUpdateMain = window.SceneManager.updateMain;
       window.SceneManager.updateMain = function() {
-        if (!isFastForward) {
+        const speedMultiplier = getSpeedMultiplier();
+        if (!isFastForward || (userOpt && userOpt.fastForward === false)) {
           return origUpdateMain.apply(this, arguments);
         }
 
@@ -623,10 +675,20 @@ function setupFastForward(userOpt, isMZ) {
         }
       };
       clearInterval(hookTimer);
-      logger.debug(`Fast forward engine hook installed (${speedMultiplier}x available on R3/Tab with thermal frame-skip)`);
+      logger.debug(`Fast forward engine hook installed (${getSpeedMultiplier()}x available on R3/Tab with thermal frame-skip)`);
     }
   }, 50);
   setTimeout(() => clearInterval(hookTimer), 30000);
+
+  return {
+    refresh: () => {
+      if (userOpt && userOpt.fastForward === false) {
+        isFastForward = false;
+      }
+      syncIndicator();
+    },
+    isActive: () => isFastForward
+  };
 }
 
 /**
@@ -713,8 +775,18 @@ function setupInputModule(options = {}) {
   setupTouchControls(userOpt);
   setupNativeGamepadConflictResolver(userOpt);
   setupInputLatch();
-  setupKeymapDebugOverlay(userOpt);
-  setupFastForward(userOpt, isMZ);
+  const keymap = setupKeymapDebugOverlay(userOpt);
+  const fastForward = setupFastForward(userOpt, isMZ);
+  return { keymap, fastForward };
+}
+
+function getNativeGamepads() {
+  if (!origNativeGetGamepads) return [];
+  try {
+    return origNativeGetGamepads() || [];
+  } catch (e) {
+    return [];
+  }
 }
 
 module.exports = {
@@ -722,5 +794,6 @@ module.exports = {
   CONTROLLER_PROFILES,
   resolveGamepadProfile,
   triggerInput,
-  patchInputLatch
+  patchInputLatch,
+  getNativeGamepads
 };

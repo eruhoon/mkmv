@@ -187,8 +187,24 @@ function resolveEffectiveEngine(engineVersion, gameDir, existsSyncFn = fs.exists
   return { engine: isMZ ? 'mz' : 'mv', isMZ, mode: 'auto' };
 }
 
+function getTargetConfigPath(runtimeDir, gameRootDir) {
+  const targetDir = (gameRootDir && gameRootDir !== runtimeDir) ? gameRootDir : runtimeDir;
+  return path.join(targetDir, 'mkmv.json');
+}
+
+function saveGameConfig(runtimeDir, gameRootDir, updates) {
+  const targetPath = getTargetConfigPath(runtimeDir, gameRootDir);
+  const existing = readJsonFile(targetPath) || {};
+  const merged = Object.assign({}, existing, updates);
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.writeFileSync(targetPath, JSON.stringify(merged, null, 2) + '\n', 'utf8');
+  return { path: targetPath, config: merged };
+}
+
 module.exports = {
   loadConfig,
+  saveGameConfig,
+  getTargetConfigPath,
   detectHardwareProfile,
   resolveEffectiveProfile,
   resolveEffectiveEngine,

@@ -23,6 +23,15 @@ test('resolveGamepadProfile identifies controller type correctly', () => {
     resolveGamepadProfile(standardPad, { gamepadProfile: 'retrogame_joypad' }).name,
     CONTROLLER_PROFILES.retrogame_joypad.name
   );
+
+  // 4. Nintendo W3C standard profile override
+  const nintendoProfile = resolveGamepadProfile(standardPad, { gamepadProfile: 'nintendo' });
+  assert.equal(nintendoProfile.name, CONTROLLER_PROFILES.nintendo.name);
+  assert.equal(nintendoProfile.buttons[0].action, 'cancel'); // B (South)
+  assert.equal(nintendoProfile.buttons[1].action, 'ok');     // A (East)
+  assert.equal(nintendoProfile.buttons[2].action, 'menu');   // Y (West)
+  assert.equal(nintendoProfile.buttons[3].action, 'shift');  // X (North)
+  assert.equal(nintendoProfile.buttons[12].action, 'up');    // W3C D-Pad Up
 });
 
 test('CONTROLLER_PROFILES mapping definitions are correct', () => {
