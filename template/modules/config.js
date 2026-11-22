@@ -105,6 +105,8 @@ function loadConfig(runtimeDir, gameRootDir) {
     disableNativeGamepad: true,
     fastForward: true,
     fastForwardSpeed: 2,
+    targetFps: 60,
+    disableOptimizations: [],
     performanceProfile: 'auto',
     engineVersion: 'auto',
     logLevel: null
@@ -143,6 +145,15 @@ function loadConfig(runtimeDir, gameRootDir) {
 
   finalConfig.effectiveProfile = effectiveProfile;
   finalConfig.effectiveLogLevel = getLogLevel();
+
+  // Normalize disableOptimizations to a clean string array
+  if (!Array.isArray(finalConfig.disableOptimizations)) {
+    finalConfig.disableOptimizations = [];
+  } else {
+    finalConfig.disableOptimizations = finalConfig.disableOptimizations.filter(
+      id => typeof id === 'string' && id.trim().length > 0
+    );
+  }
 
   // Backwards compatibility sync
   if (finalConfig.lowMemoryMode === undefined) {

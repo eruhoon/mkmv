@@ -5,7 +5,8 @@ const path = require('node:path');
 const {
   CONTROLLER_PROFILES,
   resolveGamepadProfile,
-  triggerInput
+  triggerInput,
+  patchInputLatch
 } = require(path.join(__dirname, '..', '..', 'template', 'modules', 'input.js'));
 
 test('resolveGamepadProfile identifies controller type correctly', () => {
@@ -74,4 +75,40 @@ test('triggerInput updates window.Input and dispatches keyboard events', () => {
 
   delete global.window;
   delete global.document;
+});
+
+test('patchInputLatch preserves sub-frame key taps until Input.update consumes them', () => {
+  const seenPressed = [];
+  const mockInput = {
+    keyMapper: { 90: 'ok', 88: 'cancel' },
+    _currentState: {},
+    _onKeyDown(ev) {
+      const name = this.keyMapper[ev.keyCode];
+      if (name) this._currentState[name] = true;
+    },
+    _onKeyUp(ev) {
+      const name = this.keyMapper[ev.keyCode];
+      if (name) this._currentState[name] = false;
+    },
+    update() {
+      seenPressed.push(Boolean(this._currentState.ok));
+    },
+    clear() {
+      this._currentState = {};
+    }
+  };
+
+  assert.equal(patchInputLatch(mockInput), true);
+
+  // Sub-frame tap: keydown + keyup before Input.update()
+  mockInput._onKeyDown({ keyCode: 90 });
+  mockInput._onKeyUp({ keyCode: 90 });
+
+  // First update must still observe 'ok' as pressed!
+  mockInput.update();
+  assert.deepEqual(seenPressed, [true]);
+
+  // After update consumes it, 'ok' is released for the next frame
+  mockInput.update();
+  assert.deepEqual(seenPressed, [true, false]);
 });

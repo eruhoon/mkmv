@@ -5,7 +5,8 @@ const {
   patchGraphics,
   setupGraphicsModule,
   patchSpriteOptimization,
-  patchMinimapOptimization
+  patchMinimapOptimization,
+  patchTargetFps
 } = require('../../template/modules/graphics.js');
 
 test('injectResolutionStyles adds style tag with pixelated rules', () => {
@@ -129,4 +130,38 @@ test('patchMinimapOptimization redirects KMS_Minimap setBlendColor to opacity', 
   icon.updateBlink();
   assert.deepEqual(icon._blendColor, [0, 0, 0, 0]);
   assert.ok(icon.opacity > 0 && icon.opacity <= 255);
+});
+
+test('patchTargetFps caps render calls at targetFps while keeping frameCount advancing', () => {
+  let renderCalls = 0;
+  let fakeNow = 1000;
+  global.window = {
+    Graphics: {
+      frameCount: 0,
+      render() {
+        renderCalls++;
+        this.frameCount++;
+      }
+    }
+  };
+
+  assert.equal(patchTargetFps({ targetFps: 60 }, () => fakeNow), false);
+  assert.equal(patchTargetFps({ targetFps: 30 }, () => fakeNow), true);
+
+  // Frame 0 (1000ms) -> rendered
+  window.Graphics.render({});
+  assert.equal(renderCalls, 1);
+  assert.equal(window.Graphics.frameCount, 1);
+
+  // Frame 1 (1016.6ms) -> skipped render, frameCount still advances
+  fakeNow = 1016.6;
+  window.Graphics.render({});
+  assert.equal(renderCalls, 1);
+  assert.equal(window.Graphics.frameCount, 2);
+
+  // Frame 2 (1033.3ms) -> rendered
+  fakeNow = 1033.3;
+  window.Graphics.render({});
+  assert.equal(renderCalls, 2);
+  assert.equal(window.Graphics.frameCount, 3);
 });

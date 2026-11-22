@@ -202,6 +202,42 @@ function patchMinimapOptimization() {
   }
 }
 
+/**
+ * 60Hz 게임 로직을 유지하면서 화면 렌더링 FPS만 제한하여 발열 및 배터리를 절감합니다.
+ * @param {object} userOpt
+ * @param {function} nowFn 테스트용 타임스탬프 함수
+ */
+function patchTargetFps(userOpt = {}, nowFn = null) {
+  if (typeof window === 'undefined' || !window.Graphics) return false;
+  const targetFps = Number(userOpt.targetFps);
+  if (!Number.isFinite(targetFps) || targetFps < 10 || targetFps >= 60) {
+    return false;
+  }
+  if (typeof window.Graphics.render !== 'function' || window.Graphics._mkmvTargetFpsPatched) {
+    return false;
+  }
+
+  const getNow = typeof nowFn === 'function'
+    ? nowFn
+    : () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const frameIntervalMs = (1000 / targetFps) * 0.85;
+  let lastRenderTime = 0;
+
+  const origRender = window.Graphics.render;
+  window.Graphics._mkmvTargetFpsPatched = true;
+  window.Graphics.render = function(stage) {
+    const now = getNow();
+    if (lastRenderTime === 0 || (now - lastRenderTime) >= frameIntervalMs) {
+      lastRenderTime = now;
+      return origRender.apply(this, arguments);
+    }
+    if (typeof this.frameCount === 'number') {
+      this.frameCount++;
+    }
+  };
+  return true;
+}
+
 function setupGraphicsModule(options = {}) {
   const { userOpt = {} } = options;
 
@@ -210,12 +246,14 @@ function setupGraphicsModule(options = {}) {
   if (typeof window === 'undefined') return;
 
   patchSpriteOptimization();
+  patchTargetFps(userOpt);
 
   let gCleanup = null;
   const gTimer = setInterval(() => {
     if (window.Graphics) {
       patchGraphics(userOpt);
       patchSpriteOptimization();
+      patchTargetFps(userOpt);
       clearInterval(gTimer);
       if (gCleanup) clearTimeout(gCleanup);
     }
@@ -231,9 +269,11 @@ function setupGraphicsModule(options = {}) {
       window.SceneManager.run = function(sceneClass) {
         patchGraphics(userOpt);
         patchSpriteOptimization();
+        patchTargetFps(userOpt);
         const res = origRun.apply(this, arguments);
         patchGraphics(userOpt);
         patchSpriteOptimization();
+        patchTargetFps(userOpt);
         if (window.Graphics && typeof window.Graphics._updateAllElements === 'function') {
           window.Graphics._updateAllElements();
         }
@@ -273,5 +313,6 @@ module.exports = {
   injectResolutionStyles,
   patchGraphics,
   patchSpriteOptimization,
-  patchMinimapOptimization
+  patchMinimapOptimization,
+  patchTargetFps
 };

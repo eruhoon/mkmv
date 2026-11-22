@@ -166,84 +166,90 @@ function setupNativeGamepadConflictResolver(userOpt) {
   }, 10);
   setTimeout(() => clearInterval(inputTimer), 30000);
 
-  // 스마트 하드웨어 게임패드 엔진 (Wayland/Sway 가상키보드 격리 및 D-Pad 번호 파편화 극복)
-  const activeStates = new Map();
-  let lastLoggedId = '';
+  // 스마트 하드웨어 게임패드 엔진 (disableNativeGamepad: false 일 때만 직접 폴링; 기본값 true 시 gptokeyb 가상 키보드와 이중 입력 충돌 방지)
+  const disableNativeGamepad = !userOpt || userOpt.disableNativeGamepad !== false;
+  if (!disableNativeGamepad) {
+    const activeStates = new Map();
+    let lastLoggedId = '';
 
-  function pollHardwareGamepads() {
-    if (!origNativeGetGamepads) return;
-    try {
-      const pads = origNativeGetGamepads();
-      for (let i = 0; i < pads.length; i++) {
-        const pad = pads[i];
-        if (!pad || !pad.connected) continue;
+    function pollHardwareGamepads() {
+      if (!origNativeGetGamepads) return;
+      try {
+        const pads = origNativeGetGamepads();
+        for (let i = 0; i < pads.length; i++) {
+          const pad = pads[i];
+          if (!pad || !pad.connected) continue;
 
-        const profile = resolveGamepadProfile(pad, userOpt);
-        if (pad.id !== lastLoggedId) {
-          lastLoggedId = pad.id;
-          logger.info(`Hardware Gamepad #${i} recognized: "${pad.id}" -> Profile: ${profile.name}`);
-        }
+          const profile = resolveGamepadProfile(pad, userOpt);
+          if (pad.id !== lastLoggedId) {
+            lastLoggedId = pad.id;
+            logger.info(`Hardware Gamepad #${i} recognized: "${pad.id}" -> Profile: ${profile.name}`);
+          }
 
-        // 1. 버튼 검사
-        const buttons = Object.assign({}, profile.buttons, (userOpt && userOpt.gamepadMapping) || {});
-        for (const [btnIdxStr, def] of Object.entries(buttons)) {
-          const btnIdx = Number(btnIdxStr);
-          const btn = pad.buttons[btnIdx];
-          const isPressed = btn ? (btn.pressed || btn.value > 0.4) : false;
-          const keyId = `pad_${i}_btn_${btnIdx}`;
-          const wasPressed = activeStates.get(keyId) || false;
+          // 1. 버튼 검사
+          const buttons = Object.assign({}, profile.buttons, (userOpt && userOpt.gamepadMapping) || {});
+          for (const [btnIdxStr, def] of Object.entries(buttons)) {
+            const btnIdx = Number(btnIdxStr);
+            const btn = pad.buttons[btnIdx];
+            const isPressed = btn ? (btn.pressed || btn.value > 0.4) : false;
+            const keyId = `pad_${i}_btn_${btnIdx}`;
+            const wasPressed = activeStates.get(keyId) || false;
 
-          if (isPressed && !wasPressed) {
-            activeStates.set(keyId, true);
-            triggerInput(def.action, true, def.key, def.code);
-          } else if (!isPressed && wasPressed) {
-            activeStates.set(keyId, false);
-            triggerInput(def.action, false, def.key, def.code);
+            if (isPressed && !wasPressed) {
+              activeStates.set(keyId, true);
+              triggerInput(def.action, true, def.key, def.code);
+            } else if (!isPressed && wasPressed) {
+              activeStates.set(keyId, false);
+              triggerInput(def.action, false, def.key, def.code);
+            }
+          }
+
+          // 2. 아날로그 스틱 검사 (데드존 0.5)
+          const axX = (pad.axes && pad.axes[0]) || 0;
+          const axY = (pad.axes && pad.axes[1]) || 0;
+          const sUp = axY < -0.5;
+          const sDown = axY > 0.5;
+          const sLeft = axX < -0.5;
+          const sRight = axX > 0.5;
+
+          const stickDefs = [
+            { id: `pad_${i}_s_up`,    active: sUp,    action: 'up',    key: 'ArrowUp',   code: 38 },
+            { id: `pad_${i}_s_down`,  active: sDown,  action: 'down',  key: 'ArrowDown', code: 40 },
+            { id: `pad_${i}_s_left`,  active: sLeft,  action: 'left',  key: 'ArrowLeft', code: 37 },
+            { id: `pad_${i}_s_right`, active: sRight, action: 'right', key: 'ArrowRight',code: 39 }
+          ];
+
+          for (const s of stickDefs) {
+            const wasActive = activeStates.get(s.id) || false;
+            if (s.active && !wasActive) {
+              activeStates.set(s.id, true);
+              triggerInput(s.action, true, s.key, s.code);
+            } else if (!s.active && wasActive) {
+              activeStates.set(s.id, false);
+              triggerInput(s.action, false, s.key, s.code);
+            }
           }
         }
+      } catch (e) {}
+    }
 
-        // 2. 아날로그 스틱 검사 (데드존 0.5)
-        const axX = (pad.axes && pad.axes[0]) || 0;
-        const axY = (pad.axes && pad.axes[1]) || 0;
-        const sUp = axY < -0.5;
-        const sDown = axY > 0.5;
-        const sLeft = axX < -0.5;
-        const sRight = axX > 0.5;
-
-        const stickDefs = [
-          { id: `pad_${i}_s_up`,    active: sUp,    action: 'up',    key: 'ArrowUp',   code: 38 },
-          { id: `pad_${i}_s_down`,  active: sDown,  action: 'down',  key: 'ArrowDown', code: 40 },
-          { id: `pad_${i}_s_left`,  active: sLeft,  action: 'left',  key: 'ArrowLeft', code: 37 },
-          { id: `pad_${i}_s_right`, active: sRight, action: 'right', key: 'ArrowRight',code: 39 }
-        ];
-
-        for (const s of stickDefs) {
-          const wasActive = activeStates.get(s.id) || false;
-          if (s.active && !wasActive) {
-            activeStates.set(s.id, true);
-            triggerInput(s.action, true, s.key, s.code);
-          } else if (!s.active && wasActive) {
-            activeStates.set(s.id, false);
-            triggerInput(s.action, false, s.key, s.code);
-          }
-        }
+    // 폴링 루프 가동 (requestAnimationFrame 기반 고주사율 폴링 + setInterval 백업)
+    let pollRunning = true;
+    function rafLoop() {
+      if (!pollRunning) return;
+      pollHardwareGamepads();
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(rafLoop);
       }
-    } catch (e) {}
-  }
-
-  // 폴링 루프 가동 (requestAnimationFrame 기반 고주사율 폴링 + setInterval 백업)
-  let pollRunning = true;
-  function rafLoop() {
-    if (!pollRunning) return;
-    pollHardwareGamepads();
+    }
     if (typeof requestAnimationFrame !== 'undefined') {
       requestAnimationFrame(rafLoop);
+    } else {
+      setInterval(pollHardwareGamepads, 16);
     }
-  }
-  if (typeof requestAnimationFrame !== 'undefined') {
-    requestAnimationFrame(rafLoop);
+    logger.debug('Smart Hardware Gamepad Engine installed (direct polling enabled)');
   } else {
-    setInterval(pollHardwareGamepads, 16);
+    logger.debug('Native Gamepad polling disabled (using gptokeyb keyboard input without conflict)');
   }
 
   // 외부 게임 스크립트/플러그인 충돌 방지를 위한 Web Gamepad API 반환 격리
@@ -391,10 +397,11 @@ function setupKeymapDebugOverlay(userOpt) {
     document.addEventListener('DOMContentLoaded', () => ensureOverlay());
   }
 
-  // 화면 전환 시 최상단(lastChild) 유지
-  setInterval(() => {
-    ensureOverlay();
+  // 화면 전환 시 최상단(lastChild) 유지 (디버그 오버레이 활성 시에만 실행)
+  const overlayTimer = setInterval(() => {
+    if (isVisible) ensureOverlay();
   }, 150);
+  if (overlayTimer && overlayTimer.unref) overlayTimer.unref();
 
   function recordKey(type, e) {
     const key = e.key || e.code || 'Unknown';
@@ -622,11 +629,90 @@ function setupFastForward(userOpt, isMZ) {
   setTimeout(() => clearInterval(hookTimer), 30000);
 }
 
+/**
+ * 1프레임 미만 짧은 키 탭(연타)이 Input.update() 전에 keyup으로 지워져 씹히는 현상을 방지합니다.
+ * keydown으로 눌린 액션은 다음 Input.update()가 소비할 때까지 keyup 해제를 보류합니다.
+ */
+function patchInputLatch(inputObj) {
+  if (!inputObj || inputObj._mkmvLatchPatched) return false;
+  if (typeof inputObj._onKeyDown !== 'function' || typeof inputObj._onKeyUp !== 'function' || typeof inputObj.update !== 'function') {
+    return false;
+  }
+  inputObj._mkmvLatchPatched = true;
+
+  const unconsumed = new Set();
+  const deferredUp = new Set();
+
+  const origOnKeyDown = inputObj._onKeyDown;
+  const origOnKeyUp = inputObj._onKeyUp;
+  const origUpdate = inputObj.update;
+  const origClear = inputObj.clear;
+
+  inputObj._onKeyDown = function(event) {
+    const buttonName = this.keyMapper && event ? this.keyMapper[event.keyCode] : null;
+    if (buttonName) {
+      unconsumed.add(buttonName);
+      deferredUp.delete(buttonName);
+    }
+    return origOnKeyDown.apply(this, arguments);
+  };
+
+  inputObj._onKeyUp = function(event) {
+    const buttonName = this.keyMapper && event ? this.keyMapper[event.keyCode] : null;
+    if (buttonName && unconsumed.has(buttonName)) {
+      deferredUp.add(buttonName);
+      return;
+    }
+    return origOnKeyUp.apply(this, arguments);
+  };
+
+  inputObj.update = function() {
+    const res = origUpdate.apply(this, arguments);
+    unconsumed.clear();
+    if (deferredUp.size > 0) {
+      if (this._currentState) {
+        for (const buttonName of deferredUp) {
+          this._currentState[buttonName] = false;
+        }
+      }
+      deferredUp.clear();
+    }
+    return res;
+  };
+
+  if (typeof origClear === 'function') {
+    inputObj.clear = function() {
+      unconsumed.clear();
+      deferredUp.clear();
+      return origClear.apply(this, arguments);
+    };
+  }
+  return true;
+}
+
+function setupInputLatch() {
+  if (typeof window === 'undefined') return;
+  if (window.Input && patchInputLatch(window.Input)) return;
+
+  let cleanupTimer = null;
+  const latchTimer = setInterval(() => {
+    if (window.Input && patchInputLatch(window.Input)) {
+      clearInterval(latchTimer);
+      if (cleanupTimer) clearTimeout(cleanupTimer);
+      logger.debug('1-frame input latch installed on window.Input');
+    }
+  }, 15);
+  cleanupTimer = setTimeout(() => clearInterval(latchTimer), 30000);
+  if (cleanupTimer && cleanupTimer.unref) cleanupTimer.unref();
+  if (latchTimer && latchTimer.unref) latchTimer.unref();
+}
+
 function setupInputModule(options = {}) {
   const { userOpt = {}, isMZ = false } = options;
   setupKeyGuards();
   setupTouchControls(userOpt);
   setupNativeGamepadConflictResolver(userOpt);
+  setupInputLatch();
   setupKeymapDebugOverlay(userOpt);
   setupFastForward(userOpt, isMZ);
 }
@@ -635,5 +721,6 @@ module.exports = {
   setupInputModule,
   CONTROLLER_PROFILES,
   resolveGamepadProfile,
-  triggerInput
+  triggerInput,
+  patchInputLatch
 };

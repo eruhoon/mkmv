@@ -107,6 +107,18 @@ try {
   assert.strictEqual(logTestConfig.logLevel, 'verbose');
   assert.strictEqual(logTestConfig.effectiveLogLevel, LOG_LEVELS.verbose);
 
+  // 5. Test targetFps & disableOptimizations defaults and overrides
+  assert.strictEqual(logTestConfig.targetFps, 60);
+  assert.deepStrictEqual(logTestConfig.disableOptimizations, []);
+
+  fs.writeFileSync(path.join(gameDir, 'mkmv.json'), JSON.stringify({
+    targetFps: 30,
+    disableOptimizations: ['skip-branch-table', '', 123, 'windowlayer-skip-empty']
+  }));
+  const optTestConfig = loadConfig(tempDir, gameDir);
+  assert.strictEqual(optTestConfig.targetFps, 30);
+  assert.deepStrictEqual(optTestConfig.disableOptimizations, ['skip-branch-table', 'windowlayer-skip-empty']);
+
   console.log('[test] All config module tests passed successfully!');
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });

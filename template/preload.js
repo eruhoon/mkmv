@@ -36,6 +36,7 @@ const { setupFontModule } = require(path.join(__dirname, 'modules', 'font.js'));
 const { setupGraphicsModule } = require(path.join(__dirname, 'modules', 'graphics.js'));
 const { setupMemoryModule } = require(path.join(__dirname, 'modules', 'memory.js'));
 const { setupAudioModule } = require(path.join(__dirname, 'modules', 'audio.js'));
+const { setupEngineHooksModule } = require(path.join(__dirname, 'modules', 'engine-hooks.js'));
 
 // 3. 작업 디렉토리 및 메인 모듈 경로 자동 감지
 const runtimeDir = __dirname;
@@ -72,8 +73,9 @@ if (!process.mainModule) {
 // 5. 모듈 순차 초기화
 setupInputModule({ userOpt, isMZ });
 setupImageLoader({ resolveGamePath, origExistsSync, origReadFileSync, gameDir });
-setupNwShim({ gameDir, userOpt });
+setupNwShim({ gameDir, gameRootDir, userOpt });
 setupGraphicsModule({ userOpt });
 setupFontModule({ runtimeDir, gameDir, gameRootDir, origExistsSync, origReadFileSync });
 setupMemoryModule({ userOpt });
 setupAudioModule({ resolveGamePath, origExistsSync, origReadFileSync });
+setupEngineHooksModule({ userOpt, isMZ });

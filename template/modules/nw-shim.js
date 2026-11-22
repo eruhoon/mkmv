@@ -21,6 +21,9 @@
 
 const Module = require('module');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const { EventEmitter } = require('events');
 const { createLogger } = require('./logger.js');
 const logger = createLogger('mkmv-nw');
 
@@ -89,22 +92,121 @@ function createNwShim(gameDir, userOpt = {}) {
   };
 }
 
-function createGreenworksShim() {
+function createGreenworksShim(storageDir = null) {
+  const profilePath = storageDir ? path.join(storageDir, 'save', 'steam-profile.json') : null;
+  const emitter = new EventEmitter();
+
+  function loadState() {
+    if (profilePath) {
+      try {
+        if (fs.existsSync(profilePath)) {
+          const parsed = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+          if (parsed && typeof parsed === 'object') {
+            parsed.achievements = parsed.achievements && typeof parsed.achievements === 'object'
+              ? parsed.achievements
+              : {};
+            return parsed;
+          }
+        }
+      } catch (e) {
+        logger.debug('Failed to load offline steam-profile.json, creating fresh state:', e.message);
+      }
+    }
+    const accountId = crypto.randomBytes(4).readUInt32LE(0) || 1;
+    return {
+      screenName: 'Offline Player',
+      accountId,
+      steamId: String(76561197960265728n + BigInt(accountId)),
+      achievements: {}
+    };
+  }
+
+  const state = loadState();
+
+  function persistState() {
+    if (!profilePath) return;
+    try {
+      const dir = path.dirname(profilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(profilePath, JSON.stringify(state, null, 2) + '\n', 'utf8');
+    } catch (e) {
+      logger.debug('Failed to persist offline steam-profile.json:', e.message);
+    }
+  }
+
+  function invokeCallback(cb, ...args) {
+    if (typeof cb === 'function') {
+      try { cb(...args); } catch (e) {}
+    }
+  }
+
   return {
-    init: () => false,
-    initAPI: () => false,
-    isSteamRunning: () => false,
+    init: () => true,
+    initAPI: () => true,
+    isSteamRunning: () => true,
     getAppId: () => 0,
-    activateAchievement: () => {},
-    getAchievement: () => false,
-    clearAchievement: () => {},
-    getNumberOfPlayers: () => 0,
+    getCurrentGameLanguage: () => 'english',
+    getSteamId: () => ({
+      screenName: state.screenName,
+      steamId: state.steamId,
+      accountId: state.accountId,
+      staticAccountId: state.accountId,
+      level: 1,
+      isValid: () => true
+    }),
+    activateAchievement: (name, successCb, errorCb) => {
+      if (typeof name !== 'string' || !name) {
+        invokeCallback(errorCb, new Error('Invalid achievement name'));
+        return;
+      }
+      if (!state.achievements[name] || !state.achievements[name].achieved) {
+        state.achievements[name] = {
+          achieved: true,
+          unlockTime: Math.floor(Date.now() / 1000)
+        };
+        persistState();
+        logger.info(`Offline Steam achievement unlocked: ${name}`);
+      }
+      invokeCallback(successCb);
+    },
+    getAchievement: (name, successCb, errorCb) => {
+      if (typeof name !== 'string' || !name) {
+        invokeCallback(errorCb, new Error('Invalid achievement name'));
+        return false;
+      }
+      const achieved = Boolean(state.achievements[name] && state.achievements[name].achieved);
+      invokeCallback(successCb, achieved);
+      return achieved;
+    },
+    clearAchievement: (name, successCb, errorCb) => {
+      if (typeof name !== 'string' || !name) {
+        invokeCallback(errorCb, new Error('Invalid achievement name'));
+        return;
+      }
+      if (state.achievements[name]) {
+        delete state.achievements[name];
+        persistState();
+      }
+      invokeCallback(successCb);
+    },
+    getAchievementNames: () => Object.keys(state.achievements),
+    getNumberOfAchievements: () => Object.keys(state.achievements).length,
+    getNumberOfPlayers: (successCb) => {
+      invokeCallback(successCb, 1);
+      return 1;
+    },
     activateGameOverlay: () => {},
     isGameOverlayEnabled: () => false,
-    on: () => {},
-    _events: {},
-    ugcGetItems: () => {},
-    ugcGetUserItems: () => {}
+    on: (...args) => emitter.on(...args),
+    once: (...args) => emitter.once(...args),
+    off: (...args) => emitter.off(...args),
+    removeListener: (...args) => emitter.removeListener(...args),
+    emit: (...args) => emitter.emit(...args),
+    _events: emitter._events,
+    ugcGetItems: (_opts, _type, _filter, successCb) => invokeCallback(successCb, []),
+    ugcGetUserItems: (_opts, _type, _sort, _filter, successCb) => invokeCallback(successCb, [])
   };
 }
 
@@ -177,10 +279,10 @@ function injectNwVersions() {
 }
 
 function setupNwShim(options = {}) {
-  const { gameDir = process.cwd(), userOpt = {} } = options;
+  const { gameDir = process.cwd(), gameRootDir = null, userOpt = {} } = options;
 
   const nwShim = createNwShim(gameDir, userOpt);
-  const greenworksShim = createGreenworksShim();
+  const greenworksShim = createGreenworksShim(gameRootDir);
 
   hookRequire(nwShim, greenworksShim);
 

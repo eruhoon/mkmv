@@ -1,5 +1,8 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
 const {
   setupNwShim,
   createNwShim,
@@ -22,12 +25,33 @@ test('createNwShim returns correct App, Window, Shell properties', () => {
   assert.equal(typeof nw.Shell.openExternal, 'function');
 });
 
-test('createGreenworksShim stubs Steamworks API safely', () => {
-  const greenworks = createGreenworksShim();
-  assert.equal(greenworks.init(), false);
-  assert.equal(greenworks.isSteamRunning(), false);
-  assert.equal(greenworks.getAppId(), 0);
-  assert.equal(typeof greenworks.activateAchievement, 'function');
+test('createGreenworksShim emulates offline Steam API and persists achievements', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mkmv-steam-test-'));
+  try {
+    const greenworks = createGreenworksShim(tmpDir);
+    assert.equal(greenworks.init(), true);
+    assert.equal(greenworks.initAPI(), true);
+    assert.equal(greenworks.isSteamRunning(), true);
+    assert.equal(greenworks.getAppId(), 0);
+    assert.equal(greenworks.getSteamId().screenName, 'Offline Player');
+    assert.equal(greenworks.getSteamId().isValid(), true);
+
+    let unlockedCb = false;
+    greenworks.activateAchievement('FIRST_BLOOD', () => { unlockedCb = true; });
+    assert.equal(unlockedCb, true);
+    assert.equal(greenworks.getAchievement('FIRST_BLOOD'), true);
+    assert.deepEqual(greenworks.getAchievementNames(), ['FIRST_BLOOD']);
+
+    // Reload from persisted save/steam-profile.json
+    const reloaded = createGreenworksShim(tmpDir);
+    assert.equal(reloaded.getAchievement('FIRST_BLOOD'), true);
+    assert.equal(reloaded.getSteamId().steamId, greenworks.getSteamId().steamId);
+
+    reloaded.clearAchievement('FIRST_BLOOD');
+    assert.equal(reloaded.getAchievement('FIRST_BLOOD'), false);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
 test('hookRequire intercepts nw.gui and greenworks', () => {
