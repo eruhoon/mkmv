@@ -13,6 +13,8 @@
 
 const path = require('path');
 const { createLogger } = require('./logger.js');
+const { waitForCondition } = require('./bootstrap.js');
+const { isVirtualBypassUrl, hasSpecialChars, isRpgmvHeader } = require('./fs-virtual.js');
 const logger = createLogger('mkmv-audio');
 
 function patchAudioFocus() {
@@ -29,17 +31,11 @@ function patchAudioFocus() {
 function setupAudioFocusGuard() {
   if (typeof window === 'undefined') return;
 
-  let cleanupTimer = null;
-  const audioPollTimer = setInterval(() => {
-    if (window.WebAudio || window.AudioManager) {
-      patchAudioFocus();
-      clearInterval(audioPollTimer);
-      if (cleanupTimer) clearTimeout(cleanupTimer);
-    }
-  }, 30);
-  cleanupTimer = setTimeout(() => clearInterval(audioPollTimer), 10000);
-  if (cleanupTimer && cleanupTimer.unref) cleanupTimer.unref();
-  if (audioPollTimer && audioPollTimer.unref) audioPollTimer.unref();
+  waitForCondition(
+    () => Boolean(window.WebAudio || window.AudioManager),
+    patchAudioFocus,
+    { intervalMs: 30, timeoutMs: 10000 }
+  );
 }
 
 function setupAudioRecovery() {
@@ -72,96 +68,103 @@ function setupUniversalAudioRecovery(options = {}) {
   if (typeof window === 'undefined') return;
   const { resolveGamePath, origExistsSync, origReadFileSync } = options;
 
-  let cleanupTimer = null;
-  const hookTimer = setInterval(() => {
-    let webAudioHooked = false;
-    let html5AudioHooked = false;
+  waitForCondition(
+    () => {
+      let webAudioHooked = false;
 
-    if (window.WebAudio && window.WebAudio.prototype && window.WebAudio.prototype._load) {
-      if (!window.WebAudio.prototype._mkmvAudioHooked) {
-        window.WebAudio.prototype._mkmvAudioHooked = true;
-        const origWebAudioLoad = window.WebAudio.prototype._load;
+      if (window.WebAudio && window.WebAudio.prototype && window.WebAudio.prototype._load) {
+        if (!window.WebAudio.prototype._mkmvAudioHooked) {
+          window.WebAudio.prototype._mkmvAudioHooked = true;
+          const origWebAudioLoad = window.WebAudio.prototype._load;
 
-        window.WebAudio.prototype._load = function(url) {
-          if (!url || typeof url !== 'string' || url.startsWith('data:') || url.startsWith('blob:')) {
+          window.WebAudio.prototype._load = function(url) {
+            if (isVirtualBypassUrl(url)) {
+              return origWebAudioLoad.apply(this, arguments);
+            }
+
+            const isEncryptedAudio = window.Decrypter && window.Decrypter.hasEncryptedAudio;
+            if (!isEncryptedAudio && hasSpecialChars(url) && window.WebAudio._context) {
+              const resolved = resolveGamePath ? resolveGamePath(url) : null;
+              const isEncryptedExt = resolved && (resolved.endsWith('.rpgmvo') || resolved.endsWith('.rpgmvm') || resolved.endsWith('.ogg_') || resolved.endsWith('.m4a_'));
+              if (!isEncryptedExt && resolved && origExistsSync && origExistsSync(resolved)) {
+                try {
+                  const buf = origReadFileSync(resolved);
+                  if (!isRpgmvHeader(buf)) {
+                    logger.verbose(`Direct loading Unicode WebAudio via Node.js fs: ${url}`);
+                    const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+                    this._onXhrLoad({ status: 200, response: arrayBuffer });
+                    return;
+                  }
+                } catch (e) {
+                  logger.error('Direct WebAudio load error:', e);
+                }
+              }
+            }
             return origWebAudioLoad.apply(this, arguments);
-          }
-
-          const isEncryptedAudio = window.Decrypter && window.Decrypter.hasEncryptedAudio;
-          const resolved = resolveGamePath ? resolveGamePath(url) : null;
-          const exists = resolved && origExistsSync ? origExistsSync(resolved) : false;
-          const isEncryptedExt = resolved && (resolved.endsWith('.rpgmvo') || resolved.endsWith('.rpgmvm') || resolved.endsWith('.ogg_') || resolved.endsWith('.m4a_'));
-          const hasSpecial = /[^\x00-\x7F]/.test(url || '') || (resolved && /[^\x00-\x7F]/.test(resolved)) || (url && url.includes('%'));
-
-          if (!isEncryptedAudio && !isEncryptedExt && hasSpecial && exists && window.WebAudio._context) {
-            try {
-              const buf = origReadFileSync(resolved);
-              const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
-              if (!isRpgmvHeader) {
-                logger.verbose(`Direct loading Unicode WebAudio via Node.js fs: ${url}`);
-                const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-                this._onXhrLoad({ status: 200, response: arrayBuffer });
-                return;
-              }
-            } catch (e) {
-              logger.error('Direct WebAudio load error:', e);
-            }
-          }
-          return origWebAudioLoad.apply(this, arguments);
-        };
-        webAudioHooked = true;
+          };
+          webAudioHooked = true;
+        }
       }
-    }
 
-    if (window.Html5Audio && typeof window.Html5Audio._load === 'function') {
-      if (!window.Html5Audio._mkmvAudioHooked) {
-        window.Html5Audio._mkmvAudioHooked = true;
-        const origHtml5Load = window.Html5Audio._load;
+      if (window.Html5Audio && typeof window.Html5Audio._load === 'function') {
+        if (!window.Html5Audio._mkmvAudioHooked) {
+          window.Html5Audio._mkmvAudioHooked = true;
+          const origHtml5Load = window.Html5Audio._load;
 
-        window.Html5Audio._load = function(url) {
-          if (!url || typeof url !== 'string' || url.startsWith('data:') || url.startsWith('blob:')) {
+          window.Html5Audio._load = function(url) {
+            if (isVirtualBypassUrl(url)) {
+              return origHtml5Load.apply(this, arguments);
+            }
+
+            const isEncryptedAudio = window.Decrypter && window.Decrypter.hasEncryptedAudio;
+            if (!isEncryptedAudio && hasSpecialChars(url) && this._audioElement) {
+              const resolved = resolveGamePath ? resolveGamePath(url) : null;
+              const isEncryptedExt = resolved && (resolved.endsWith('.rpgmvo') || resolved.endsWith('.rpgmvm') || resolved.endsWith('.ogg_') || resolved.endsWith('.m4a_'));
+              if (!isEncryptedExt && resolved && origExistsSync && origExistsSync(resolved)) {
+                try {
+                  const buf = origReadFileSync(resolved);
+                  if (!isRpgmvHeader(buf)) {
+                    logger.verbose(`Direct loading Unicode Html5Audio via Blob: ${url}`);
+                    const ext = path.extname(resolved).toLowerCase();
+                    const mime = ext === '.ogg' ? 'audio/ogg' : (ext === '.m4a' ? 'audio/mp4' : 'audio/mpeg');
+                    const blob = new Blob([buf], { type: mime });
+                    const blobUrl = URL.createObjectURL(blob);
+                    const audioEl = this._audioElement;
+                    if (typeof audioEl.addEventListener === 'function') {
+                      const revoke = () => {
+                        try { URL.revokeObjectURL(blobUrl); } catch (e) {}
+                        if (typeof audioEl.removeEventListener === 'function') {
+                          audioEl.removeEventListener('loadeddata', revoke);
+                          audioEl.removeEventListener('error', revoke);
+                        }
+                      };
+                      audioEl.addEventListener('loadeddata', revoke);
+                      audioEl.addEventListener('error', revoke);
+                    }
+                    this._isLoading = true;
+                    audioEl.src = blobUrl;
+                    audioEl.load();
+                    return;
+                  }
+                } catch (e) {
+                  logger.error('Direct Html5Audio load error:', e);
+                }
+              }
+            }
             return origHtml5Load.apply(this, arguments);
-          }
-
-          const isEncryptedAudio = window.Decrypter && window.Decrypter.hasEncryptedAudio;
-          const resolved = resolveGamePath ? resolveGamePath(url) : null;
-          const exists = resolved && origExistsSync ? origExistsSync(resolved) : false;
-          const isEncryptedExt = resolved && (resolved.endsWith('.rpgmvo') || resolved.endsWith('.rpgmvm') || resolved.endsWith('.ogg_') || resolved.endsWith('.m4a_'));
-          const hasSpecial = /[^\x00-\x7F]/.test(url || '') || (resolved && /[^\x00-\x7F]/.test(resolved)) || (url && url.includes('%'));
-
-          if (!isEncryptedAudio && !isEncryptedExt && hasSpecial && exists && this._audioElement) {
-            try {
-              const buf = origReadFileSync(resolved);
-              const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
-              if (!isRpgmvHeader) {
-                logger.verbose(`Direct loading Unicode Html5Audio via Blob: ${url}`);
-                const ext = path.extname(resolved).toLowerCase();
-                const mime = ext === '.ogg' ? 'audio/ogg' : (ext === '.m4a' ? 'audio/mp4' : 'audio/mpeg');
-                const blob = new Blob([buf], { type: mime });
-                this._isLoading = true;
-                this._audioElement.src = URL.createObjectURL(blob);
-                this._audioElement.load();
-                return;
-              }
-            } catch (e) {
-              logger.error('Direct Html5Audio load error:', e);
-            }
-          }
-          return origHtml5Load.apply(this, arguments);
-        };
-        html5AudioHooked = true;
+          };
+        }
       }
-    }
 
-    if (webAudioHooked || (window.WebAudio && window.WebAudio.prototype && window.WebAudio.prototype._mkmvAudioHooked)) {
-      clearInterval(hookTimer);
-      if (cleanupTimer) clearTimeout(cleanupTimer);
-      logger.debug('Universal Audio recovery hooks installed successfully');
-    }
-  }, 50);
-  cleanupTimer = setTimeout(() => clearInterval(hookTimer), 30000);
-  if (cleanupTimer && cleanupTimer.unref) cleanupTimer.unref();
-  if (hookTimer && hookTimer.unref) hookTimer.unref();
+      if (webAudioHooked || (window.WebAudio && window.WebAudio.prototype && window.WebAudio.prototype._mkmvAudioHooked)) {
+        logger.debug('Universal Audio recovery hooks installed successfully');
+        return true;
+      }
+      return false;
+    },
+    null,
+    { intervalMs: 50, timeoutMs: 30000, runImmediately: false }
+  );
 }
 
 function setupAudioModule(options = {}) {

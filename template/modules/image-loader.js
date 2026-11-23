@@ -14,7 +14,24 @@
 const path = require('path');
 const fs = require('fs');
 const { createLogger } = require('./logger.js');
+const { waitForCondition } = require('./bootstrap.js');
+const { isVirtualBypassUrl, hasSpecialChars, isRpgmvHeader } = require('./fs-virtual.js');
 const logger = createLogger('mkmv-image');
+
+function attachBlobRevoke(imgEl, url) {
+  if (!imgEl || typeof url !== 'string' || !url.startsWith('blob:')) return;
+  if (typeof URL === 'undefined' || typeof URL.revokeObjectURL !== 'function') return;
+  if (typeof imgEl.addEventListener !== 'function') return;
+  const revoke = () => {
+    try { URL.revokeObjectURL(url); } catch (e) {}
+    if (typeof imgEl.removeEventListener === 'function') {
+      imgEl.removeEventListener('load', revoke);
+      imgEl.removeEventListener('error', revoke);
+    }
+  };
+  imgEl.addEventListener('load', revoke);
+  imgEl.addEventListener('error', revoke);
+}
 
 function setupCanvasOptimization() {
   // CanvasRenderingContext2D getImageData / putImageData 안전 가드
@@ -140,12 +157,7 @@ function setupBitmapGuard() {
     return false;
   };
 
-  if (!patchGuard()) {
-    const timer = setInterval(() => {
-      if (patchGuard()) clearInterval(timer);
-    }, 50);
-    setTimeout(() => clearInterval(timer), 60000);
-  }
+  waitForCondition(patchGuard, null, { intervalMs: 50, timeoutMs: 60000 });
 }
 
 function bufferToImageSrc(buf, resolvedPath) {
@@ -161,114 +173,116 @@ function bufferToImageSrc(buf, resolvedPath) {
 }
 
 function setupResourceErrorLogger(gameDir) {
-  const hookTimer = setInterval(() => {
-    if (window.Graphics && typeof window.Graphics.printLoadingError === 'function') {
-      if (!window.Graphics._mkmvHooked) {
-        window.Graphics._mkmvHooked = true;
-        const origPrintLoadingError = window.Graphics.printLoadingError;
-        window.Graphics.printLoadingError = function(url) {
-          logger.error(`Failed to load resource: ${url}`);
-          try {
-            if (gameDir) {
-              logger.error(`Target path: ${path.join(gameDir, url)}`);
-            }
-          } catch (e) {}
-          return origPrintLoadingError.apply(this, arguments);
-        };
-        clearInterval(hookTimer);
-        logger.debug('Resource loading error logger installed');
-      }
-    }
-  }, 50);
-  setTimeout(() => clearInterval(hookTimer), 30000);
+  waitForCondition(
+    () => Boolean(window.Graphics && typeof window.Graphics.printLoadingError === 'function'),
+    () => {
+      if (window.Graphics._mkmvHooked) return;
+      window.Graphics._mkmvHooked = true;
+      const origPrintLoadingError = window.Graphics.printLoadingError;
+      window.Graphics.printLoadingError = function(url) {
+        logger.error(`Failed to load resource: ${url}`);
+        try {
+          if (gameDir) {
+            logger.error(`Target path: ${path.join(gameDir, url)}`);
+          }
+        } catch (e) {}
+        return origPrintLoadingError.apply(this, arguments);
+      };
+      logger.debug('Resource loading error logger installed');
+    },
+    { intervalMs: 50, timeoutMs: 30000 }
+  );
 }
 
-function setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFileSync }) {
-  const hookTimer = setInterval(() => {
-    if (window.Bitmap && window.Bitmap.prototype && window.Bitmap.prototype._requestImage) {
-      if (!window.Bitmap.prototype._mkmvUnicodeHooked) {
-        window.Bitmap.prototype._mkmvUnicodeHooked = true;
-        const origRequestImage = window.Bitmap.prototype._requestImage;
+function setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFileSync, gameDir }) {
+  const baseHasSpecial = hasSpecialChars(gameDir);
 
-        window.Bitmap.prototype._requestImage = function(url) {
-          const targetUrl = url || '';
+  waitForCondition(
+    () => Boolean(window.Bitmap && window.Bitmap.prototype && window.Bitmap.prototype._requestImage),
+    () => {
+      if (window.Bitmap.prototype._mkmvUnicodeHooked) return;
+      window.Bitmap.prototype._mkmvUnicodeHooked = true;
+      const origRequestImage = window.Bitmap.prototype._requestImage;
 
-          // 1. Data URI 또는 Blob URL은 이미 인메모리 처리된 이미지이므로 바이패스
-          if (targetUrl.startsWith('data:') || targetUrl.startsWith('blob:')) {
-            return origRequestImage.apply(this, arguments);
-          }
+      window.Bitmap.prototype._requestImage = function(url) {
+        const targetUrl = url || '';
 
-          // 2. 알만툴 MV 자체 리소스 암호화가 활성화된 경우 Decrypter 루틴으로 바이패스
-          const isEncryptedGame = window.Decrypter && window.Decrypter.hasEncryptedImages && !window.Decrypter.checkImgIgnore(targetUrl);
+        // 1. Data URI 또는 Blob URL은 이미 인메모리 처리된 이미지이므로 바이패스
+        if (isVirtualBypassUrl(targetUrl)) {
+          return origRequestImage.apply(this, arguments);
+        }
+
+        // 2. 알만툴 MV 자체 리소스 암호화가 활성화된 경우 Decrypter 루틴으로 바이패스
+        const isEncryptedGame = window.Decrypter && window.Decrypter.hasEncryptedImages && !window.Decrypter.checkImgIgnore(targetUrl);
+
+        // 순수 유니코드/특수문자 이미지 파일에 한해 Node.js fs로 즉시 data/blob URI 주입
+        if (!isEncryptedGame && (baseHasSpecial || hasSpecialChars(targetUrl))) {
           const resolved = resolveGamePath(targetUrl);
-          const exists = resolved && origExistsSync.call(fs, resolved);
           const isEncryptedExt = resolved && (resolved.endsWith('.rpgmvp') || resolved.endsWith('.png_'));
-          const hasSpecial = /[^\x00-\x7F]/.test(targetUrl) || (resolved && /[^\x00-\x7F]/.test(resolved)) || targetUrl.includes('%');
-
-          // 순수 유니코드/특수문자 이미지 파일에 한해 Node.js fs로 즉시 data URI 주입
-          if (!isEncryptedGame && !isEncryptedExt && hasSpecial && exists) {
+          if (!isEncryptedExt && resolved && origExistsSync.call(fs, resolved)) {
             try {
               const buf = origReadFileSync.call(fs, resolved);
-              const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
-              if (!isRpgmvHeader) {
+              if (!isRpgmvHeader(buf)) {
                 logger.verbose(`Direct loading Unicode image via Node.js fs: ${targetUrl}`);
                 const imageSrc = bufferToImageSrc(buf, resolved);
-                return origRequestImage.call(this, imageSrc);
+                const res = origRequestImage.call(this, imageSrc);
+                attachBlobRevoke(this._image, imageSrc);
+                return res;
               }
             } catch (e) {
               logger.error('Direct image load error:', e);
             }
           }
+        }
 
-          origRequestImage.apply(this, arguments);
+        origRequestImage.apply(this, arguments);
 
-          // 3. 로딩 실패 시 img.onerror 자동 복구 핸들러
-          if (this._image) {
-            const originalErrorListener = this._errorListener;
-            const self = this;
+        // 3. 로딩 실패 시 img.onerror 자동 복구 핸들러
+        if (this._image) {
+          const originalErrorListener = this._errorListener;
+          const self = this;
 
-            this._image.removeEventListener('error', originalErrorListener);
-            this._image.addEventListener('error', function onImageError(e) {
-              try {
-                const retryUrl = url || self._url || '';
-                if (retryUrl.startsWith('data:') || retryUrl.startsWith('blob:')) {
-                  if (originalErrorListener) {
-                    originalErrorListener.call(self._image || this, e);
-                  }
-                  return;
+          this._image.removeEventListener('error', originalErrorListener);
+          this._image.addEventListener('error', function onImageError(e) {
+            try {
+              const retryUrl = url || self._url || '';
+              if (isVirtualBypassUrl(retryUrl)) {
+                if (originalErrorListener) {
+                  originalErrorListener.call(self._image || this, e);
                 }
-                const retryResolved = resolveGamePath(retryUrl);
-                const retryEncrypted = retryResolved && (retryResolved.endsWith('.rpgmvp') || retryResolved.endsWith('.png_'));
-                if (!isEncryptedGame && !retryEncrypted && retryResolved && origExistsSync.call(fs, retryResolved)) {
-                  const buf = origReadFileSync.call(fs, retryResolved);
-                  const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
-                  if (!isRpgmvHeader) {
-                    logger.verbose(`Auto-recovering Unicode image via Node.js fs: ${retryUrl}`);
-                    const targetImg = self._image || this || (e && e.target);
-                    if (targetImg) {
-                      targetImg.src = bufferToImageSrc(buf, retryResolved);
-                      return;
-                    }
+                return;
+              }
+              const retryResolved = resolveGamePath(retryUrl);
+              const retryEncrypted = retryResolved && (retryResolved.endsWith('.rpgmvp') || retryResolved.endsWith('.png_'));
+              if (!isEncryptedGame && !retryEncrypted && retryResolved && origExistsSync.call(fs, retryResolved)) {
+                const buf = origReadFileSync.call(fs, retryResolved);
+                if (!isRpgmvHeader(buf)) {
+                  logger.verbose(`Auto-recovering Unicode image via Node.js fs: ${retryUrl}`);
+                  const targetImg = self._image || this || (e && e.target);
+                  if (targetImg) {
+                    const imageSrc = bufferToImageSrc(buf, retryResolved);
+                    attachBlobRevoke(targetImg, imageSrc);
+                    targetImg.src = imageSrc;
+                    return;
                   }
                 }
-              } catch (err) {
-                logger.error('Image recovery failed:', err);
               }
+            } catch (err) {
+              logger.error('Image recovery failed:', err);
+            }
 
-              // 실제 파일이 없거나 복구 불가 시 원래 에러 핸들러 호출
-              if (originalErrorListener) {
-                originalErrorListener.call(self._image || this, e);
-              }
-            });
-          }
-        };
+            // 실제 파일이 없거나 복구 불가 시 원래 에러 핸들러 호출
+            if (originalErrorListener) {
+              originalErrorListener.call(self._image || this, e);
+            }
+          });
+        }
+      };
 
-        clearInterval(hookTimer);
-        logger.debug('Unicode image recovery handler installed');
-      }
-    }
-  }, 50);
-  setTimeout(() => clearInterval(hookTimer), 30000);
+      logger.debug('Unicode image recovery handler installed');
+    },
+    { intervalMs: 50, timeoutMs: 30000 }
+  );
 }
 
 function setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origReadFileSync, gameDir }) {
@@ -282,25 +296,27 @@ function setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origRe
 
   const origSrcSet = desc.set;
   const origSrcGet = desc.get;
+  const baseHasSpecial = hasSpecialChars(gameDir);
 
   function toDataUrlIfUnicode(inputUrl) {
-    if (!inputUrl || typeof inputUrl !== 'string') return inputUrl;
-    if (inputUrl.startsWith('data:') || inputUrl.startsWith('blob:')) return inputUrl;
+    if (isVirtualBypassUrl(inputUrl)) return inputUrl;
 
     const isEncryptedGame = window.Decrypter && window.Decrypter.hasEncryptedImages && !window.Decrypter.checkImgIgnore(inputUrl);
+    if (isEncryptedGame) return inputUrl;
+
+    if (!baseHasSpecial && !hasSpecialChars(inputUrl)) return inputUrl;
+
     let resolved = resolveGamePath(inputUrl);
     if (!resolved && gameDir && !path.isAbsolute(inputUrl)) {
       resolved = path.resolve(gameDir, inputUrl);
     }
     const isEncryptedExt = resolved && (resolved.endsWith('.rpgmvp') || resolved.endsWith('.png_'));
-    if (isEncryptedGame || isEncryptedExt) return inputUrl;
+    if (isEncryptedExt) return inputUrl;
 
-    const hasSpecial = /[^\x00-\x7F]/.test(inputUrl) || (resolved && /[^\x00-\x7F]/.test(resolved)) || inputUrl.includes('%');
-    if (hasSpecial && resolved && origExistsSync.call(fs, resolved)) {
+    if (resolved && origExistsSync.call(fs, resolved)) {
       try {
         const buf = origReadFileSync.call(fs, resolved);
-        const isRpgmvHeader = buf.length >= 16 && buf[0] === 0x52 && buf[1] === 0x50 && buf[2] === 0x47 && buf[3] === 0x4D && buf[4] === 0x56;
-        if (!isRpgmvHeader) {
+        if (!isRpgmvHeader(buf)) {
           logger.verbose(`Direct loading Unicode HTMLImageElement: ${inputUrl}`);
           return bufferToImageSrc(buf, resolved);
         }
@@ -321,6 +337,7 @@ function setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origRe
       set: function(val) {
         this._mkmvOriginalSrc = val;
         const converted = toDataUrlIfUnicode(val);
+        if (converted !== val) attachBlobRevoke(this, converted);
         origSrcSet.call(this, converted);
       }
     });
@@ -334,6 +351,7 @@ function setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origRe
       if (typeof name === 'string' && name.toLowerCase() === 'src') {
         this._mkmvOriginalSrc = value;
         const converted = toDataUrlIfUnicode(value);
+        if (converted !== value) attachBlobRevoke(this, converted);
         return origSetAttribute.call(this, name, converted);
       }
       return origSetAttribute.apply(this, arguments);
@@ -452,12 +470,7 @@ function setupCanvasMeshCompatibility() {
     return meshPatched && spinePatched;
   };
 
-  if (!patchMesh()) {
-    const timer = setInterval(() => {
-      if (patchMesh()) clearInterval(timer);
-    }, 50);
-    setTimeout(() => clearInterval(timer), 30000);
-  }
+  waitForCondition(patchMesh, null, { intervalMs: 50, timeoutMs: 30000 });
 }
 
 function setupImageLoader(options = {}) {
@@ -466,7 +479,7 @@ function setupImageLoader(options = {}) {
   setupCanvasMeshCompatibility();
   setupBitmapGuard();
   setupResourceErrorLogger(gameDir);
-  setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFileSync });
+  setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFileSync, gameDir });
   setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origReadFileSync, gameDir });
 }
 

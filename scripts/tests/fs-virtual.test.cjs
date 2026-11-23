@@ -190,6 +190,8 @@ test('setupUniversalXhrRecovery supports synchronous XHR for unicode assets', ()
     dispatchEvent(event) {}
   }
 
+  const origEvent = global.Event;
+  const origProgressEvent = global.ProgressEvent;
   global.XMLHttpRequest = MockXHR;
   global.Event = class { constructor(type) { this.type = type; } };
   global.ProgressEvent = class { constructor(type) { this.type = type; } };
@@ -208,7 +210,51 @@ test('setupUniversalXhrRecovery supports synchronous XHR for unicode assets', ()
   assert.equal(xhr.responseText, '{"key": "유니코드값"}');
 
   delete global.XMLHttpRequest;
-  delete global.Event;
-  delete global.ProgressEvent;
+  if (origEvent === undefined) delete global.Event;
+  else global.Event = origEvent;
+  if (origProgressEvent === undefined) delete global.ProgressEvent;
+  else global.ProgressEvent = origProgressEvent;
   fs.rmSync(rootDir, { recursive: true, force: true });
+});
+
+
+test('setupVirtualFs invalidates path cache on write/unlink and recovers Unicode fetch', async () => {
+  const { resolveCaseInsensitive, setupUniversalXhrRecovery } = require('../../template/modules/fs-virtual.js');
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mkmv-vfs-cache-'));
+  const gameDir = path.join(rootDir, 'game');
+  fs.mkdirSync(gameDir, { recursive: true });
+  fs.writeFileSync(path.join(gameDir, 'index.html'), '<html></html>');
+  fs.writeFileSync(path.join(gameDir, '유니코드.txt'), 'hello-fetch', 'utf8');
+
+  const origWindow = global.window;
+  const origXhr = global.XMLHttpRequest;
+
+  try {
+    global.XMLHttpRequest = class { open() {} send() {} };
+    global.window = {
+      fetch: async () => { throw new Error('network fetch should be bypassed'); }
+    };
+
+    setupVirtualFs({ gameDir, gameRootDir: rootDir, isMZ: false });
+    setupUniversalXhrRecovery(gameDir);
+
+    // 1. Write new file via patched fs and verify resolveCaseInsensitive + existsSync after cache invalidation
+    const targetFile = path.join(gameDir, 'DynamicNew.txt');
+    fs.writeFileSync(targetFile, 'abc', 'utf8');
+    assert.equal(fs.existsSync(path.join(gameDir, 'dynamicnew.txt')), true);
+    assert.equal(resolveCaseInsensitive('www/dynamicnew.txt', gameDir).toLowerCase(), targetFile.toLowerCase());
+
+    fs.unlinkSync(targetFile);
+    assert.equal(fs.existsSync(path.join(gameDir, 'dynamicnew.txt')), false);
+
+    // 2. Unicode fetch recovery
+    const res = await global.window.fetch('유니코드.txt');
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'hello-fetch');
+  } finally {
+    global.window = origWindow;
+    if (origXhr === undefined) delete global.XMLHttpRequest;
+    else global.XMLHttpRequest = origXhr;
+    fs.rmSync(rootDir, { recursive: true, force: true });
+  }
 });

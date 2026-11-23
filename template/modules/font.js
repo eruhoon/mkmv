@@ -14,6 +14,7 @@
 const path = require('path');
 const fs = require('fs');
 const { createLogger } = require('./logger.js');
+const { waitForCondition } = require('./bootstrap.js');
 const logger = createLogger('mkmv-font');
 
 function setupFallbackFont(options = {}) {
@@ -127,17 +128,11 @@ function setupFallbackFont(options = {}) {
   };
 
   if (typeof window !== 'undefined') {
-    let cleanupTimer = null;
-    const fontTimer = setInterval(() => {
-      if (window.Window_Base || window.Bitmap) {
-        patchFontChain();
-        clearInterval(fontTimer);
-        if (cleanupTimer) clearTimeout(cleanupTimer);
-      }
-    }, 30);
-    cleanupTimer = setTimeout(() => clearInterval(fontTimer), 10000);
-    if (cleanupTimer && cleanupTimer.unref) cleanupTimer.unref();
-    if (fontTimer && fontTimer.unref) fontTimer.unref();
+    waitForCondition(
+      () => Boolean(window.Window_Base || window.Bitmap),
+      patchFontChain,
+      { intervalMs: 30, timeoutMs: 10000, runImmediately: false }
+    );
   }
 }
 
@@ -160,18 +155,14 @@ function patchFontReady() {
 function setupFontReadyGuard() {
   if (typeof window === 'undefined') return;
 
-  let cleanupTimer = null;
-  const fontReadyTimer = setInterval(() => {
-    patchFontReady();
-    if (window.Scene_Boot && window.Scene_Boot.prototype && window.Scene_Boot.prototype.isGameFontLoaded) {
+  waitForCondition(
+    () => {
       patchFontReady();
-      clearInterval(fontReadyTimer);
-      if (cleanupTimer) clearTimeout(cleanupTimer);
-    }
-  }, 20);
-  cleanupTimer = setTimeout(() => clearInterval(fontReadyTimer), 15000);
-  if (cleanupTimer && cleanupTimer.unref) cleanupTimer.unref();
-  if (fontReadyTimer && fontReadyTimer.unref) fontReadyTimer.unref();
+      return Boolean(window.Scene_Boot && window.Scene_Boot.prototype && window.Scene_Boot.prototype.isGameFontLoaded);
+    },
+    patchFontReady,
+    { intervalMs: 20, timeoutMs: 15000, runImmediately: false }
+  );
 }
 
 function setupFontModule(options = {}) {

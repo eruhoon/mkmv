@@ -12,6 +12,8 @@
  * 3. SceneManager.run 훅 및 윈도우 resize / load 이벤트 핸들러
  */
 
+const { waitForCondition } = require('./bootstrap.js');
+
 function injectResolutionStyles(userOpt = {}) {
   if (typeof document === 'undefined') return;
 
@@ -296,23 +298,19 @@ function setupGraphicsModule(options = {}) {
   patchSpriteOptimization();
   patchTargetFps(userOpt);
 
-  let gCleanup = null;
-  const gTimer = setInterval(() => {
-    if (window.Graphics) {
+  waitForCondition(
+    () => Boolean(window.Graphics),
+    () => {
       patchGraphics(userOpt);
       patchSpriteOptimization();
       patchTargetFps(userOpt);
-      clearInterval(gTimer);
-      if (gCleanup) clearTimeout(gCleanup);
-    }
-  }, 30);
-  gCleanup = setTimeout(() => clearInterval(gTimer), 10000);
-  if (gCleanup && gCleanup.unref) gCleanup.unref();
-  if (gTimer && gTimer.unref) gTimer.unref();
+    },
+    { intervalMs: 30, timeoutMs: 10000, runImmediately: false }
+  );
 
-  let smCleanup = null;
-  const smTimer = setInterval(() => {
-    if (window.SceneManager && window.SceneManager.run) {
+  waitForCondition(
+    () => Boolean(window.SceneManager && window.SceneManager.run),
+    () => {
       const origRun = window.SceneManager.run;
       window.SceneManager.run = function(sceneClass) {
         patchGraphics(userOpt);
@@ -327,17 +325,19 @@ function setupGraphicsModule(options = {}) {
         }
         return res;
       };
-      clearInterval(smTimer);
-      if (smCleanup) clearTimeout(smCleanup);
-    }
-  }, 30);
-  smCleanup = setTimeout(() => clearInterval(smTimer), 15000);
-  if (smCleanup && smCleanup.unref) smCleanup.unref();
-  if (smTimer && smTimer.unref) smTimer.unref();
+    },
+    { intervalMs: 30, timeoutMs: 15000, runImmediately: false }
+  );
 
-  // KMS_Minimap 등 맵 씬 미니맵 최적화 주기적 점검
-  const minimapInterval = setInterval(patchMinimapOptimization, 500);
-  if (minimapInterval && minimapInterval.unref) minimapInterval.unref();
+  // KMS_Minimap 등 맵 씬 미니맵 최적화 (후킹 완료 시 자동 종료)
+  waitForCondition(
+    () => {
+      patchMinimapOptimization();
+      return Boolean(window.Spriteset_Map && window.Spriteset_Map.prototype && window.Spriteset_Map.prototype._mkmvMinimapOptimized);
+    },
+    null,
+    { intervalMs: 500, timeoutMs: 60000, runImmediately: false }
+  );
 
   window.addEventListener('load', () => {
     setTimeout(() => {

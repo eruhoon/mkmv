@@ -181,15 +181,30 @@ async function buildVariant(mode) {
     'preload.js'
   );
 
-  // modules/*.js
+  // modules/**/*.js (재귀 탐색)
   const modulesDir = path.join(TEMPLATE_DIR, 'modules');
   if (fs.existsSync(modulesDir)) {
-    const modFiles = fs.readdirSync(modulesDir).filter(f => f.endsWith('.js'));
-    for (const modFile of modFiles) {
+    const collectJsFiles = (dir, relPrefix = '') => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const results = [];
+      for (const entry of entries) {
+        const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          results.push(...collectJsFiles(fullPath, relPath));
+        } else if (entry.isFile() && entry.name.endsWith('.js')) {
+          results.push({ fullPath, relPath });
+        }
+      }
+      return results;
+    };
+
+    const modFiles = collectJsFiles(modulesDir);
+    for (const { fullPath, relPath } of modFiles) {
       await processAndCopyJs(
-        path.join(modulesDir, modFile),
-        path.join(portableAppDir, 'modules', modFile),
-        `modules/${modFile}`
+        fullPath,
+        path.join(portableAppDir, 'modules', relPath),
+        `modules/${relPath}`
       );
     }
   }

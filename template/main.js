@@ -3,18 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const { createLogger, setLogLevel } = require(path.join(__dirname, 'modules', 'logger.js'));
 const logger = createLogger('mkmv');
-const { resolveCaseInsensitive } = require(path.join(__dirname, 'modules', 'fs-virtual.js'));
+const { resolveCaseInsensitive, detectGameDirectory } = require(path.join(__dirname, 'modules', 'fs-virtual.js'));
+const { resolveGameRootDir } = require(path.join(__dirname, 'modules', 'bootstrap.js'));
 
 // 디렉토리 경로 분리 (공유 런타임 vs 게임 데이터)
 const runtimeDir = __dirname;
-let gameRootDir = process.env.MKMV_GAME_DIR || runtimeDir;
-
-for (const arg of process.argv) {
-  if (arg.startsWith('--game-dir=')) {
-    const rawVal = arg.slice('--game-dir='.length);
-    if (rawVal) gameRootDir = path.resolve(rawVal);
-  }
-}
+const gameRootDir = resolveGameRootDir(runtimeDir);
 
 // The same configuration resolver is used by preload.
 const { loadConfig, resolveEffectiveEngine } = require(path.join(__dirname, 'modules', 'config.js'));
@@ -27,28 +21,7 @@ logger.info('Effective performance settings:', JSON.stringify({
   disableGpu: opt.disableGpu
 }));
 
-// 알만툴 MV / MZ 게임 디렉토리 격리 감지 (game/ 우선, 그 다음 www/, 최후 폴백으로 game/)
-function detectGameDirectory(baseDir) {
-  if (opt.gameDir) {
-    const custom = path.resolve(baseDir, opt.gameDir);
-    if (fs.existsSync(path.join(custom, 'index.html')) || fs.existsSync(custom)) {
-      return custom;
-    }
-  }
-  const candidates = ['game', 'www'];
-  for (const sub of candidates) {
-    const candidatePath = path.join(baseDir, sub);
-    if (fs.existsSync(path.join(candidatePath, 'index.html'))) {
-      return candidatePath;
-    }
-  }
-  if (fs.existsSync(path.join(baseDir, 'index.html'))) {
-    return baseDir;
-  }
-  return path.join(baseDir, 'game'); // 기본값
-}
-
-const gameDir = detectGameDirectory(gameRootDir);
+const gameDir = detectGameDirectory(gameRootDir, opt.gameDir);
 const engineInfo = resolveEffectiveEngine(opt.engineVersion, gameDir, fs.existsSync);
 const isMZ = engineInfo.isMZ;
 logger.info(`Runtime Directory: ${runtimeDir}`);

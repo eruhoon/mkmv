@@ -11,6 +11,7 @@
  */
 
 const { createLogger } = require('./logger.js');
+const { waitForCondition } = require('./bootstrap.js');
 const logger = createLogger('mkmv-mem');
 
 function setupFpsMeter(userOpt = {}) {
@@ -80,6 +81,18 @@ function setupFpsMeter(userOpt = {}) {
     return false;
   };
 
+  let fallbackCtrl = null;
+
+  const ensureFallbackOverlay = () => {
+    if (!fallbackCtrl) {
+      fallbackCtrl = createFallbackFpsOverlay();
+    } else if (fallbackCtrl.start) {
+      fallbackCtrl.start();
+    }
+    const el = typeof document !== 'undefined' && document.getElementById('mkmv-fps-counter');
+    if (el) el.style.setProperty('display', 'block', 'important');
+  };
+
   const startWatchers = () => {
     if (mvTimer) return;
     mvTimer = setInterval(() => {
@@ -95,7 +108,7 @@ function setupFpsMeter(userOpt = {}) {
 
     fallbackTimer = setTimeout(() => {
       if (visible && !activated && (!window.Graphics || !window.Graphics._fpsMeter)) {
-        createFallbackFpsOverlay();
+        ensureFallbackOverlay();
       }
     }, 6000);
     if (fallbackTimer && fallbackTimer.unref) fallbackTimer.unref();
@@ -113,12 +126,13 @@ function setupFpsMeter(userOpt = {}) {
       if (visible) {
         const hasMvMeter = applyMvMeterVisibility(true);
         if (!hasMvMeter) {
-          createFallbackFpsOverlay();
-          const el = typeof document !== 'undefined' && document.getElementById('mkmv-fps-counter');
-          if (el) el.style.setProperty('display', 'block', 'important');
+          ensureFallbackOverlay();
         }
       } else {
         applyMvMeterVisibility(false);
+        if (fallbackCtrl && fallbackCtrl.stop) {
+          fallbackCtrl.stop();
+        }
         const el = typeof document !== 'undefined' && document.getElementById('mkmv-fps-counter');
         if (el) el.style.setProperty('display', 'none', 'important');
       }
@@ -128,11 +142,15 @@ function setupFpsMeter(userOpt = {}) {
 }
 
 function createFallbackFpsOverlay() {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined') return null;
   const existing = document.getElementById('mkmv-fps-counter');
   if (existing) {
     existing.style.setProperty('display', 'block', 'important');
-    return;
+    if (existing._mkmvFpsCtrl) {
+      existing._mkmvFpsCtrl.start();
+      return existing._mkmvFpsCtrl;
+    }
+    return null;
   }
 
   const overlay = document.createElement('div');
@@ -167,8 +185,14 @@ function createFallbackFpsOverlay() {
 
   let frameCount = 0;
   let lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  let running = false;
+  let rafId = null;
 
   function updateFpsLoop(now) {
+    if (!running) {
+      rafId = null;
+      return;
+    }
     frameCount++;
     const elapsed = now - lastTime;
     if (elapsed >= 500) {
@@ -185,12 +209,32 @@ function createFallbackFpsOverlay() {
       }
     }
     if (typeof requestAnimationFrame !== 'undefined') {
-      requestAnimationFrame(updateFpsLoop);
+      rafId = requestAnimationFrame(updateFpsLoop);
     }
   }
-  if (typeof requestAnimationFrame !== 'undefined') {
-    requestAnimationFrame(updateFpsLoop);
-  }
+
+  const ctrl = {
+    start() {
+      if (running) return;
+      running = true;
+      frameCount = 0;
+      lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      if (typeof requestAnimationFrame !== 'undefined') {
+        rafId = requestAnimationFrame(updateFpsLoop);
+      }
+    },
+    stop() {
+      running = false;
+      if (rafId !== null && typeof cancelAnimationFrame !== 'undefined') {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    }
+  };
+
+  overlay._mkmvFpsCtrl = ctrl;
+  ctrl.start();
+  return ctrl;
 }
 
 function setupLowMemoryManager(userOpt = {}) {
@@ -232,19 +276,19 @@ function setupLowMemoryManager(userOpt = {}) {
 
   let sceneHooked = false;
   let mapHooked = false;
-  let memCleanup = null;
-  const memTimer = setInterval(() => {
-    if (!sceneHooked) sceneHooked = patchSceneCleanup();
-    if (!mapHooked) mapHooked = patchMapCleanup();
-    if (sceneHooked && mapHooked) {
-      clearInterval(memTimer);
-      if (memCleanup) clearTimeout(memCleanup);
-      logger.debug('Low memory scene & map GC installed successfully');
-    }
-  }, 50);
-  memCleanup = setTimeout(() => clearInterval(memTimer), 20000);
-  if (memCleanup && memCleanup.unref) memCleanup.unref();
-  if (memTimer && memTimer.unref) memTimer.unref();
+  waitForCondition(
+    () => {
+      if (!sceneHooked) sceneHooked = patchSceneCleanup();
+      if (!mapHooked) mapHooked = patchMapCleanup();
+      if (sceneHooked && mapHooked) {
+        logger.debug('Low memory scene & map GC installed successfully');
+        return true;
+      }
+      return false;
+    },
+    null,
+    { intervalMs: 50, timeoutMs: 20000, runImmediately: false }
+  );
 
   // 배속 플레이 시 메모리 누적 방지: 유휴 GC 및 메모리 로깅
   const gcIntervalMs = (userOpt.gcIntervalSeconds !== undefined ? userOpt.gcIntervalSeconds : 30) * 1000;

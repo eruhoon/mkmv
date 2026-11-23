@@ -58,3 +58,55 @@ test('setupLowMemoryManager patches Scene_Base terminate and Scene_Map onMapLoad
     }, 60);
   });
 });
+
+
+test('setupFpsMeter stops and restarts fallback rAF loop on setVisible toggle', () => {
+  const elements = new Map();
+  let nextRafId = 1;
+  const activeRafs = new Set();
+
+  global.document = {
+    getElementById: (id) => elements.get(id) || null,
+    createElement: () => ({
+      id: '',
+      parentNode: null,
+      style: {
+        _props: {},
+        setProperty(k, v) { this._props[k] = v; },
+        getPropertyValue(k) { return this._props[k] || ''; }
+      },
+      textContent: ''
+    }),
+    body: {
+      appendChild: (el) => {
+        el.parentNode = global.document.body;
+        if (el.id) elements.set(el.id, el);
+      }
+    }
+  };
+  global.window = {};
+  global.performance = { now: () => 1000 };
+  global.requestAnimationFrame = () => {
+    const id = nextRafId++;
+    activeRafs.add(id);
+    return id;
+  };
+  global.cancelAnimationFrame = (id) => {
+    activeRafs.delete(id);
+  };
+
+  const fps = setupFpsMeter({ showFps: false });
+  assert.equal(fps.isVisible(), false);
+  assert.equal(activeRafs.size, 0);
+
+  fps.setVisible(true);
+  assert.equal(fps.isVisible(), true);
+  assert.equal(activeRafs.size, 1);
+
+  fps.setVisible(false);
+  assert.equal(fps.isVisible(), false);
+  assert.equal(activeRafs.size, 0);
+
+  fps.setVisible(true);
+  assert.equal(activeRafs.size, 1);
+});

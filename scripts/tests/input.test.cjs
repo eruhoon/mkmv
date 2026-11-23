@@ -121,3 +121,125 @@ test('patchInputLatch preserves sub-frame key taps until Input.update consumes t
   mockInput.update();
   assert.deepEqual(seenPressed, [true, false]);
 });
+
+
+test('setupFastForward toggles on R/Tab and accelerates SceneManager.updateMain', () => {
+  const { setupFastForward } = require('../../template/modules/input/fast-forward.js');
+  const origWindow = global.window;
+  const origDocument = global.document;
+
+  const listeners = new Map();
+  let updateCount = 0;
+
+  try {
+    global.document = {
+      readyState: 'complete',
+      body: {
+        appendChild(el) { el.parentNode = this; }
+      },
+      getElementById: () => null,
+      createElement: () => ({
+        id: '',
+        parentNode: null,
+        textContent: '',
+        style: { setProperty() {} }
+      })
+    };
+    global.window = {
+      SceneManager: {
+        updateMain() { updateCount++; },
+        updateFrameCount() { updateCount++; },
+        updateInputData() {},
+        changeScene() {},
+        updateScene() {}
+      },
+      addEventListener(type, fn) {
+        if (!listeners.has(type)) listeners.set(type, []);
+        listeners.get(type).push(fn);
+      }
+    };
+
+    const userOpt = { fastForward: true, fastForwardSpeed: 3 };
+    const ff = setupFastForward(userOpt, true);
+    assert.equal(ff.isActive(), false);
+
+    // Normal mode: calls original updateMain once
+    global.window.SceneManager.updateMain();
+    assert.equal(updateCount, 1);
+
+    // Press R to toggle fast-forward ON
+    for (const fn of listeners.get('keydown') || []) {
+      fn({ key: 'r', code: 'KeyR', keyCode: 82, preventDefault() {} });
+    }
+    assert.equal(ff.isActive(), true);
+
+    updateCount = 0;
+    global.window.SceneManager.updateMain();
+    assert.equal(updateCount, 3);
+
+    // Disabling via config + refresh turns fast-forward off
+    userOpt.fastForward = false;
+    ff.refresh();
+    assert.equal(ff.isActive(), false);
+  } finally {
+    global.window = origWindow;
+    global.document = origDocument;
+  }
+});
+
+test('setupKeymapDebugOverlay toggles visibility on F10 and setVisible', () => {
+  const { setupKeymapDebugOverlay } = require('../../template/modules/input/keymap-overlay.js');
+  const origWindow = global.window;
+  const origDocument = global.document;
+
+  const listeners = new Map();
+  const elements = new Map();
+
+  try {
+    global.document = {
+      readyState: 'complete',
+      body: {
+        lastElementChild: null,
+        appendChild(el) {
+          el.parentNode = this;
+          this.lastElementChild = el;
+          if (el.id) elements.set(el.id, el);
+        }
+      },
+      getElementById: (id) => elements.get(id) || null,
+      createElement: () => ({
+        id: '',
+        innerHTML: '',
+        parentNode: null,
+        style: {
+          _props: {},
+          setProperty(k, v) { this._props[k] = v; }
+        }
+      })
+    };
+    global.window = {
+      addEventListener(type, fn) {
+        if (!listeners.has(type)) listeners.set(type, []);
+        listeners.get(type).push(fn);
+      }
+    };
+
+    const userOpt = { debugKeymap: false };
+    const ctrl = setupKeymapDebugOverlay(userOpt, () => []);
+    assert.equal(ctrl.isVisible(), false);
+
+    for (const fn of listeners.get('keydown') || []) {
+      fn({ key: 'F10', code: 'F10', keyCode: 121, preventDefault() {} });
+    }
+    assert.equal(ctrl.isVisible(), true);
+    assert.equal(elements.get('mkmv-keymap-debug').style._props.display, 'block');
+
+    ctrl.setVisible(false);
+    assert.equal(ctrl.isVisible(), false);
+    assert.equal(userOpt.debugKeymap, false);
+    assert.equal(elements.get('mkmv-keymap-debug').style._props.display, 'none');
+  } finally {
+    global.window = origWindow;
+    global.document = origDocument;
+  }
+});

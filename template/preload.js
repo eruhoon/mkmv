@@ -28,6 +28,7 @@ const {
 } = require(path.join(__dirname, 'modules', 'fs-virtual.js'));
 
 // 2. 외부 모듈 로드
+const { resolveGameRootDir } = require(path.join(__dirname, 'modules', 'bootstrap.js'));
 const { loadConfig, resolveEffectiveEngine } = require(path.join(__dirname, 'modules', 'config.js'));
 const { setupNwShim } = require(path.join(__dirname, 'modules', 'nw-shim.js'));
 const { setupInputModule } = require(path.join(__dirname, 'modules', 'input.js'));
@@ -41,23 +42,16 @@ const { setupSettingsMenu } = require(path.join(__dirname, 'modules', 'settings-
 
 // 3. 작업 디렉토리 및 메인 모듈 경로 자동 감지
 const runtimeDir = __dirname;
-let gameRootDir = process.env.MKMV_GAME_DIR || runtimeDir;
+const gameRootDir = resolveGameRootDir(runtimeDir);
 
-for (const arg of process.argv) {
-  if (arg.startsWith('--game-dir=')) {
-    const rawVal = arg.slice('--game-dir='.length);
-    if (rawVal) gameRootDir = path.resolve(rawVal);
-  }
-}
-
-const gameDir = detectGameDirectory(gameRootDir);
+// 4. 사용자 정의 옵션 (mkmv.json / config.json) 로드 및 엔진 감지
+const userOpt = loadConfig(runtimeDir, gameRootDir);
+const gameDir = detectGameDirectory(gameRootDir, userOpt.gameDir);
 
 try {
   process.chdir(gameDir);
 } catch (e) {}
 
-// 4. 사용자 정의 옵션 (mkmv.json / config.json) 로드 및 엔진 감지
-const userOpt = loadConfig(runtimeDir, gameRootDir);
 const engineInfo = resolveEffectiveEngine(userOpt.engineVersion, gameDir, origExistsSync);
 const isMZ = engineInfo.isMZ;
 logger.info(`Engine detected: ${isMZ ? 'RPG Maker MZ' : 'RPG Maker MV'} (mode: ${engineInfo.mode})`);
