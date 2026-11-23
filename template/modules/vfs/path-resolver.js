@@ -264,6 +264,11 @@ function resolveCaseInsensitiveUncached(targetPath, baseDir = activeGameDir) {
       const candidate = path.resolve(baseDir, stripped);
       if (origExistsSync.call(fs, candidate)) {
         normalizedTarget = candidate;
+      } else {
+        const wwwDir = path.resolve(baseDir, 'www');
+        if (!origExistsSync.call(fs, wwwDir)) {
+          normalizedTarget = candidate;
+        }
       }
     }
   }

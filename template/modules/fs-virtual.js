@@ -149,16 +149,18 @@ function patchFs(baseDir = getActiveGameDir()) {
         }
 
         origRenameSync.call(fs, tmpPath, resolvedPath);
+        invalidatePathCaches();
         return;
       } catch (err) {
         logger.warn('Atomic save failed, falling back to direct write:', err);
       }
     }
-    return origWriteFileSync.call(fs, resolvedPath, data, options);
+    const writeRes = origWriteFileSync.call(fs, resolvedPath, data, options);
+    invalidatePathCaches();
+    return writeRes;
   };
 
   fs.renameSync = function(oldPath, newPath) {
-    invalidatePathCaches();
     let resolvedOld = resolveCaseInsensitive(oldPath, getBase());
     let resolvedNew = resolveCaseInsensitive(newPath, getBase());
     const { activeIsMZ, activeGameRootDir } = getActiveState();
@@ -166,7 +168,9 @@ function patchFs(baseDir = getActiveGameDir()) {
       resolvedOld = redirectMzSavePath(resolvedOld) || resolvedOld;
       resolvedNew = redirectMzSavePath(resolvedNew) || resolvedNew;
     }
-    return origRenameSync.call(fs, resolvedOld, resolvedNew);
+    const res = origRenameSync.call(fs, resolvedOld, resolvedNew);
+    invalidatePathCaches();
+    return res;
   };
 
   fs.readdirSync = function(p, options) {
@@ -196,7 +200,6 @@ function patchFs(baseDir = getActiveGameDir()) {
   };
 
   fs.mkdirSync = function(p, options) {
-    invalidatePathCaches();
     let resolved = resolveCaseInsensitive(p, getBase());
     const { activeIsMZ, activeGameRootDir } = getActiveState();
     if (activeIsMZ && activeGameRootDir) {
@@ -205,17 +208,20 @@ function patchFs(baseDir = getActiveGameDir()) {
         resolved = redirected;
       }
     }
-    return origMkdirSync.call(fs, resolved, options);
+    const res = origMkdirSync.call(fs, resolved, options);
+    invalidatePathCaches();
+    return res;
   };
 
   fs.unlinkSync = function(p) {
-    invalidatePathCaches();
     let resolved = resolveCaseInsensitive(p, getBase());
     const { activeIsMZ, activeGameRootDir } = getActiveState();
     if (activeIsMZ && activeGameRootDir) {
       resolved = redirectMzSavePath(resolved) || resolved;
     }
-    return origUnlinkSync.call(fs, resolved);
+    const res = origUnlinkSync.call(fs, resolved);
+    invalidatePathCaches();
+    return res;
   };
 }
 
