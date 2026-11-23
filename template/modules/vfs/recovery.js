@@ -21,7 +21,7 @@ function setupUniversalXhrRecovery(baseDir = getActiveGameDir()) {
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
 
-  function fulfillXhr(targetXhr, resolvedPath) {
+  function fulfillXhr(targetXhr, resolvedPath, preloadedBuf = null) {
     try {
       const isArrayBuffer = targetXhr.responseType === 'arraybuffer';
       const isJson = targetXhr.responseType === 'json';
@@ -29,15 +29,14 @@ function setupUniversalXhrRecovery(baseDir = getActiveGameDir()) {
 
       let responseData;
       let responseText = '';
+      const rawBuf = preloadedBuf || origReadFileSync.call(fs, resolvedPath);
 
       if (isArrayBuffer) {
-        const buf = origReadFileSync.call(fs, resolvedPath);
-        responseData = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+        responseData = rawBuf.buffer.slice(rawBuf.byteOffset, rawBuf.byteOffset + rawBuf.byteLength);
       } else if (isBlob) {
-        const buf = origReadFileSync.call(fs, resolvedPath);
-        responseData = new Blob([buf]);
+        responseData = new Blob([rawBuf]);
       } else {
-        responseText = origReadFileSync.call(fs, resolvedPath, 'utf8').replace(/^\uFEFF/, '');
+        responseText = rawBuf.toString('utf8').replace(/^\uFEFF/, '');
         if (isJson) {
           try {
             responseData = JSON.parse(responseText);
@@ -102,9 +101,19 @@ function setupUniversalXhrRecovery(baseDir = getActiveGameDir()) {
             return;
           }
           const self = this;
-          setTimeout(() => {
-            fulfillXhr(self, resolved);
-          }, 0);
+          if (fs.promises && typeof fs.promises.readFile === 'function') {
+            fs.promises.readFile(resolved).then((buf) => {
+              fulfillXhr(self, resolved, buf);
+            }).catch((err) => {
+              logger.error('Async XHR direct read error:', err);
+              if (typeof self.onerror === 'function') self.onerror();
+              self.dispatchEvent(new ProgressEvent('error'));
+            });
+          } else {
+            setTimeout(() => {
+              fulfillXhr(self, resolved);
+            }, 0);
+          }
           return;
         }
       }
@@ -121,6 +130,11 @@ function setupUniversalXhrRecovery(baseDir = getActiveGameDir()) {
         if (baseHasSpecial || hasSpecialChars(url)) {
           const resolved = resolveGamePath(url, baseDir);
           if (resolved && origExistsSync.call(fs, resolved)) {
+            if (fs.promises && typeof fs.promises.readFile === 'function') {
+              return fs.promises.readFile(resolved)
+                .then((buf) => new Response(buf, { status: 200, statusText: 'OK' }))
+                .catch(() => origFetch.apply(this, arguments));
+            }
             try {
               const buf = origReadFileSync.call(fs, resolved);
               return Promise.resolve(new Response(buf, { status: 200, statusText: 'OK' }));

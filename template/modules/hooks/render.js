@@ -208,10 +208,66 @@ function applySortIfNeeded() {
   return true;
 }
 
+function applySpriteTintSkipSame() {
+  if (typeof window === 'undefined' || !window.Sprite || !window.Sprite.prototype) return false;
+  const proto = window.Sprite.prototype;
+  if (proto._mkmvTintSkipHooked) return true;
+
+  let hookedAny = false;
+  const same4 = (a, b) => (
+    a && b && a.length >= 4 && b.length >= 4 &&
+    a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3]
+  );
+
+  if (typeof proto.setBlendColor === 'function') {
+    const origSetBlendColor = proto.setBlendColor;
+    proto.setBlendColor = function(color) {
+      if (same4(this._blendColor, color)) return;
+      return origSetBlendColor.apply(this, arguments);
+    };
+    hookedAny = true;
+  }
+
+  if (typeof proto.setColorTone === 'function') {
+    const origSetColorTone = proto.setColorTone;
+    proto.setColorTone = function(tone) {
+      if (same4(this._colorTone, tone)) return;
+      return origSetColorTone.apply(this, arguments);
+    };
+    hookedAny = true;
+  }
+
+  if (hookedAny) proto._mkmvTintSkipHooked = true;
+  return hookedAny;
+}
+
+function applyBlurFilterHalfRes() {
+  if (typeof window === 'undefined' || !window.PIXI || !window.PIXI.filters) return false;
+  const filters = window.PIXI.filters;
+  const OrigBlurFilter = filters.BlurFilter;
+  if (typeof OrigBlurFilter !== 'function') return false;
+  if (OrigBlurFilter._mkmvHalfResHooked) return true;
+
+  const WrappedBlurFilter = new Proxy(OrigBlurFilter, {
+    construct(target, args, newTarget) {
+      const inst = Reflect.construct(target, args, newTarget === WrappedBlurFilter ? target : newTarget);
+      if (inst && (inst.resolution === undefined || inst.resolution === 1)) {
+        inst.resolution = 0.5;
+      }
+      return inst;
+    }
+  });
+  WrappedBlurFilter._mkmvHalfResHooked = true;
+  filters.BlurFilter = WrappedBlurFilter;
+  return true;
+}
+
 module.exports = {
   applyWindowLayerSkipEmpty,
   applyToneFilterWhenNeeded,
   applyColorFilterIdentityOff,
   applyMenuBlurOnce,
-  applySortIfNeeded
+  applySortIfNeeded,
+  applySpriteTintSkipSame,
+  applyBlurFilterHalfRes
 };

@@ -11,7 +11,8 @@ function waitForCondition(predicate, onReady, options = {}) {
   const {
     intervalMs = 50,
     timeoutMs = 15000,
-    runImmediately = true
+    runImmediately = true,
+    unref = true
   } = options;
 
   if (runImmediately) {
@@ -51,8 +52,10 @@ function waitForCondition(predicate, onReady, options = {}) {
 
   cleanupTimer = setTimeout(stop, timeoutMs);
 
-  if (timer && typeof timer.unref === 'function') timer.unref();
-  if (cleanupTimer && typeof cleanupTimer.unref === 'function') cleanupTimer.unref();
+  if (unref) {
+    if (timer && typeof timer.unref === 'function') timer.unref();
+    if (cleanupTimer && typeof cleanupTimer.unref === 'function') cleanupTimer.unref();
+  }
 
   return stop;
 }

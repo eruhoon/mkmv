@@ -556,3 +556,74 @@ test('applySpriteUpdateLoop, applyEventsCached, and applySortIfNeeded optimize h
   assert.equal(sortCalls, 1);
   assert.deepEqual(tm.children.map(c => c.y), [1, 5]);
 });
+
+
+test('applySpriteTintSkipSame skips redundant setBlendColor and setColorTone calls', () => {
+  const { applySpriteTintSkipSame } = require('../../template/modules/engine-hooks.js');
+  let blendCalls = 0;
+  let toneCalls = 0;
+
+  function MockSprite() {
+    this._blendColor = [0, 0, 0, 0];
+    this._colorTone = [0, 0, 0, 0];
+  }
+  MockSprite.prototype.setBlendColor = function(color) {
+    blendCalls++;
+    this._blendColor = color.slice();
+  };
+  MockSprite.prototype.setColorTone = function(tone) {
+    toneCalls++;
+    this._colorTone = tone.slice();
+  };
+
+  global.window = { Sprite: MockSprite };
+  assert.equal(applySpriteTintSkipSame(), true);
+
+  const sp = new MockSprite();
+  sp.setBlendColor([0, 0, 0, 0]);
+  sp.setColorTone([0, 0, 0, 0]);
+  assert.equal(blendCalls, 0);
+  assert.equal(toneCalls, 0);
+
+  sp.setBlendColor([255, 0, 0, 128]);
+  sp.setBlendColor([255, 0, 0, 128]);
+  sp.setColorTone([10, 20, 30, 0]);
+  sp.setColorTone([10, 20, 30, 0]);
+  assert.equal(blendCalls, 1);
+  assert.equal(toneCalls, 1);
+});
+
+test('applyBlurFilterHalfRes downsamples default BlurFilter resolution to 0.5', () => {
+  const { applyBlurFilterHalfRes } = require('../../template/modules/engine-hooks.js');
+  class MockBlurFilter {
+    constructor(strength) {
+      this.strength = strength;
+      this.resolution = 1;
+    }
+  }
+  class CustomResBlurFilter {
+    constructor() {
+      this.resolution = 0.25;
+    }
+  }
+
+  global.window = {
+    PIXI: {
+      filters: {
+        BlurFilter: MockBlurFilter
+      }
+    }
+  };
+
+  assert.equal(applyBlurFilterHalfRes(), true);
+  const f1 = new global.window.PIXI.filters.BlurFilter(8);
+  assert.equal(f1.strength, 8);
+  assert.equal(f1.resolution, 0.5);
+  assert.equal(f1 instanceof MockBlurFilter, true);
+
+  // Explicit custom resolution is preserved
+  global.window.PIXI.filters.BlurFilter = CustomResBlurFilter;
+  assert.equal(applyBlurFilterHalfRes(), true);
+  const f2 = new global.window.PIXI.filters.BlurFilter();
+  assert.equal(f2.resolution, 0.25);
+});

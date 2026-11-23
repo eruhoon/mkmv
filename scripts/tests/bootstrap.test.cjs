@@ -38,6 +38,7 @@ test('waitForCondition invokes onReady immediately when predicate is true', () =
 test('waitForCondition polls until predicate becomes true and stops cleanly', async () => {
   let ready = false;
   let called = 0;
+  const keepAlive = setInterval(() => {}, 10);
   setTimeout(() => { ready = true; }, 25);
   await new Promise((resolve) => {
     waitForCondition(
@@ -46,9 +47,10 @@ test('waitForCondition polls until predicate becomes true and stops cleanly', as
         called++;
         resolve();
       },
-      { intervalMs: 10, timeoutMs: 500, runImmediately: false }
+      { intervalMs: 10, timeoutMs: 500, runImmediately: false, unref: false }
     );
   });
+  clearInterval(keepAlive);
   assert.equal(called, 1);
 });
 

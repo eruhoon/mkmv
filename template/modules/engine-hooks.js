@@ -16,7 +16,9 @@ const {
   applyToneFilterWhenNeeded,
   applyColorFilterIdentityOff,
   applyMenuBlurOnce,
-  applySortIfNeeded
+  applySortIfNeeded,
+  applySpriteTintSkipSame,
+  applyBlurFilterHalfRes
 } = require('./hooks/render.js');
 const {
   applyRequestImagesOnce,
@@ -109,6 +111,8 @@ function setupEngineHooksModule(options = {}) {
     registry.register('sprite-update-loop', 'Replace Sprite.update children.forEach with plain for-loop', applySpriteUpdateLoop);
     registry.register('events-cached', 'Cache Game_Map.prototype.events array when unchanged', applyEventsCached);
     registry.register('sort-if-needed', 'Skip Tilemap._sortChildren when already sorted', applySortIfNeeded);
+    registry.register('sprite-tint-skip-same', 'Skip redundant Sprite.setBlendColor/setColorTone calls', applySpriteTintSkipSame);
+    registry.register('blur-filter-half-res', 'Downsample PIXI BlurFilter resolution to 0.5', applyBlurFilterHalfRes);
 
     if (isMZ) {
       registry.register('color-filter-identity-off', 'Disable neutral ColorFilter passes in MZ', applyColorFilterIdentityOff);
@@ -154,5 +158,7 @@ module.exports = {
   applyRefreshIfChanged,
   applySpriteUpdateLoop,
   applyEventsCached,
-  applySortIfNeeded
+  applySortIfNeeded,
+  applySpriteTintSkipSame,
+  applyBlurFilterHalfRes
 };

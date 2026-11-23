@@ -47,16 +47,18 @@ function patchFs(baseDir = getActiveGameDir()) {
   if (fs._mkmvFsHooked) return;
   fs._mkmvFsHooked = true;
 
+  const getBase = () => getActiveGameDir() || baseDir;
+
   fs.existsSync = function(p) {
     try {
-      return origExistsSync.call(fs, resolveCaseInsensitive(p, baseDir));
+      return origExistsSync.call(fs, resolveCaseInsensitive(p, getBase()));
     } catch (e) {
       return origExistsSync.call(fs, p);
     }
   };
 
   fs.readFileSync = function(p, options) {
-    const resolved = resolveCaseInsensitive(p, baseDir);
+    const resolved = resolveCaseInsensitive(p, getBase());
     let content;
     try {
       content = origReadFileSync.call(fs, resolved, options);
@@ -98,16 +100,16 @@ function patchFs(baseDir = getActiveGameDir()) {
   };
 
   fs.statSync = function(p, options) {
-    return origStatSync.call(fs, resolveCaseInsensitive(p, baseDir), options);
+    return origStatSync.call(fs, resolveCaseInsensitive(p, getBase()), options);
   };
 
   fs.readFile = function(p, ...args) {
-    return origReadFile.call(fs, resolveCaseInsensitive(p, baseDir), ...args);
+    return origReadFile.call(fs, resolveCaseInsensitive(p, getBase()), ...args);
   };
 
   fs.writeFileSync = function(p, data, options) {
     invalidatePathCaches();
-    let resolvedPath = resolveCaseInsensitive(p, baseDir);
+    let resolvedPath = resolveCaseInsensitive(p, getBase());
     const { activeIsMZ, activeGameRootDir } = getActiveState();
 
     if (activeIsMZ && activeGameRootDir) {
@@ -157,8 +159,8 @@ function patchFs(baseDir = getActiveGameDir()) {
 
   fs.renameSync = function(oldPath, newPath) {
     invalidatePathCaches();
-    let resolvedOld = resolveCaseInsensitive(oldPath, baseDir);
-    let resolvedNew = resolveCaseInsensitive(newPath, baseDir);
+    let resolvedOld = resolveCaseInsensitive(oldPath, getBase());
+    let resolvedNew = resolveCaseInsensitive(newPath, getBase());
     const { activeIsMZ, activeGameRootDir } = getActiveState();
     if (activeIsMZ && activeGameRootDir) {
       resolvedOld = redirectMzSavePath(resolvedOld) || resolvedOld;
@@ -190,12 +192,12 @@ function patchFs(baseDir = getActiveGameDir()) {
         return Array.from(set);
       }
     }
-    return origReaddirSync.call(fs, resolveCaseInsensitive(p, baseDir), options);
+    return origReaddirSync.call(fs, resolveCaseInsensitive(p, getBase()), options);
   };
 
   fs.mkdirSync = function(p, options) {
     invalidatePathCaches();
-    let resolved = resolveCaseInsensitive(p, baseDir);
+    let resolved = resolveCaseInsensitive(p, getBase());
     const { activeIsMZ, activeGameRootDir } = getActiveState();
     if (activeIsMZ && activeGameRootDir) {
       const redirected = redirectMzSavePath(resolved);
@@ -208,7 +210,7 @@ function patchFs(baseDir = getActiveGameDir()) {
 
   fs.unlinkSync = function(p) {
     invalidatePathCaches();
-    let resolved = resolveCaseInsensitive(p, baseDir);
+    let resolved = resolveCaseInsensitive(p, getBase());
     const { activeIsMZ, activeGameRootDir } = getActiveState();
     if (activeIsMZ && activeGameRootDir) {
       resolved = redirectMzSavePath(resolved) || resolved;

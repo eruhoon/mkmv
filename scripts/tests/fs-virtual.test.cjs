@@ -258,3 +258,54 @@ test('setupVirtualFs invalidates path cache on write/unlink and recovers Unicode
     fs.rmSync(rootDir, { recursive: true, force: true });
   }
 });
+
+
+test('setupUniversalXhrRecovery supports asynchronous XHR via non-blocking fs.promises', async () => {
+  const { setupUniversalXhrRecovery } = require('../../template/modules/fs-virtual.js');
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mkmv-test-async-xhr-'));
+  fs.writeFileSync(path.join(rootDir, '비동기_유니코드.json'), '{"async": true}', 'utf8');
+
+  const origXhr = global.XMLHttpRequest;
+  const origEvent = global.Event;
+  const origProgress = global.ProgressEvent;
+
+  try {
+    class MockAsyncXHR {
+      constructor() {
+        this.readyState = 0;
+        this.status = 0;
+        this.responseText = '';
+        this.response = null;
+        this.onload = null;
+      }
+      open() {}
+      send() {}
+      dispatchEvent() {}
+    }
+
+    global.XMLHttpRequest = MockAsyncXHR;
+    global.Event = class {};
+    global.ProgressEvent = class {};
+
+    setupUniversalXhrRecovery(rootDir);
+
+    const xhr = new global.XMLHttpRequest();
+    await new Promise((resolve) => {
+      xhr.onload = resolve;
+      xhr.open('GET', '비동기_유니코드.json', true);
+      xhr.send(null);
+    });
+
+    assert.equal(xhr.readyState, 4);
+    assert.equal(xhr.status, 200);
+    assert.equal(xhr.responseText, '{"async": true}');
+  } finally {
+    if (origXhr === undefined) delete global.XMLHttpRequest;
+    else global.XMLHttpRequest = origXhr;
+    if (origEvent === undefined) delete global.Event;
+    else global.Event = origEvent;
+    if (origProgress === undefined) delete global.ProgressEvent;
+    else global.ProgressEvent = origProgress;
+    fs.rmSync(rootDir, { recursive: true, force: true });
+  }
+});
