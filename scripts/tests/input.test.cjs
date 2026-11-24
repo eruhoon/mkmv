@@ -122,6 +122,50 @@ test('patchInputLatch preserves sub-frame key taps until Input.update consumes t
   assert.deepEqual(seenPressed, [true, false]);
 });
 
+test('patchInputLatch survives plugin replacement or chaining of Input.update', () => {
+  const seenOverride = [];
+  const mockInput = {
+    keyMapper: { 37: 'left', 90: 'ok' },
+    _currentState: {},
+    _onKeyDown(ev) {
+      const name = this.keyMapper[ev.keyCode];
+      if (name) this._currentState[name] = true;
+    },
+    _onKeyUp(ev) {
+      const name = this.keyMapper[ev.keyCode];
+      if (name) this._currentState[name] = false;
+    },
+    update() {}
+  };
+
+  assert.equal(patchInputLatch(mockInput), true);
+
+  // Case 1: Plugin completely overwrites Input.update without calling previous update (like InputEx.js)
+  mockInput.update = function() {
+    seenOverride.push(Boolean(this._currentState.left));
+  };
+
+  mockInput._onKeyDown({ keyCode: 37 });
+  mockInput._onKeyUp({ keyCode: 37 });
+  mockInput.update();
+  mockInput.update();
+  assert.deepEqual(seenOverride, [true, false]);
+
+  // Case 2: Another plugin chains the already-wrapped Input.update
+  const seenChained = [];
+  const prevUpdate = mockInput.update;
+  mockInput.update = function() {
+    prevUpdate.call(this);
+    seenChained.push(Boolean(this._currentState.ok));
+  };
+
+  mockInput._onKeyDown({ keyCode: 90 });
+  mockInput._onKeyUp({ keyCode: 90 });
+  mockInput.update();
+  mockInput.update();
+  assert.deepEqual(seenChained, [true, false]);
+});
+
 
 test('setupFastForward toggles on R/Tab and accelerates SceneManager.updateMain', () => {
   const { setupFastForward } = require('../../template/modules/input/fast-forward.js');

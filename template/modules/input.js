@@ -66,11 +66,37 @@ function patchInputLatch(inputObj) {
 
   const unconsumed = new Set();
   const deferredUp = new Set();
+  let updateDepth = 0;
 
   const origOnKeyDown = inputObj._onKeyDown;
   const origOnKeyUp = inputObj._onKeyUp;
-  const origUpdate = inputObj.update;
   const origClear = inputObj.clear;
+
+  // Keep the post-update latch flush active even if a plugin replaces Input.update later (e.g. InputEx.js).
+  const wrapUpdate = (fn) => {
+    if (typeof fn !== 'function' || fn._mkmvLatchWrapped) return fn;
+    const wrapped = function() {
+      updateDepth++;
+      try {
+        return fn.apply(this, arguments);
+      } finally {
+        updateDepth--;
+        if (updateDepth === 0) {
+          unconsumed.clear();
+          if (deferredUp.size > 0) {
+            if (this._currentState) {
+              for (const buttonName of deferredUp) {
+                this._currentState[buttonName] = false;
+              }
+            }
+            deferredUp.clear();
+          }
+        }
+      }
+    };
+    wrapped._mkmvLatchWrapped = true;
+    return wrapped;
+  };
 
   inputObj._onKeyDown = function(event) {
     const buttonName = this.keyMapper && event ? this.keyMapper[event.keyCode] : null;
@@ -90,19 +116,22 @@ function patchInputLatch(inputObj) {
     return origOnKeyUp.apply(this, arguments);
   };
 
-  inputObj.update = function() {
-    const res = origUpdate.apply(this, arguments);
-    unconsumed.clear();
-    if (deferredUp.size > 0) {
-      if (this._currentState) {
-        for (const buttonName of deferredUp) {
-          this._currentState[buttonName] = false;
-        }
+  let currentUpdate = wrapUpdate(inputObj.update);
+  const desc = Object.getOwnPropertyDescriptor(inputObj, 'update');
+  if (!desc || desc.configurable !== false) {
+    Object.defineProperty(inputObj, 'update', {
+      configurable: true,
+      enumerable: desc ? desc.enumerable : true,
+      get() {
+        return currentUpdate;
+      },
+      set(nextFn) {
+        currentUpdate = wrapUpdate(nextFn);
       }
-      deferredUp.clear();
-    }
-    return res;
-  };
+    });
+  } else {
+    inputObj.update = currentUpdate;
+  }
 
   if (typeof origClear === 'function') {
     inputObj.clear = function() {
