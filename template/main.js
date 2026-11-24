@@ -7,6 +7,9 @@ const { resolveCaseInsensitive, detectGameDirectory, setAssetCache } = require(p
 const { createAssetCache } = require(path.join(__dirname, 'modules', 'vfs', 'asset-cache.js'));
 const { resolveGameRootDir } = require(path.join(__dirname, 'modules', 'bootstrap.js'));
 const { createFileStreamHandler } = require(path.join(__dirname, 'modules', 'file-protocol.js'));
+const { setupPromptMain } = require(path.join(__dirname, 'modules', 'prompt-osk.js'));
+
+let mainWindow = null;
 
 // 디렉토리 경로 분리 (공유 런타임 vs 게임 데이터)
 const runtimeDir = __dirname;
@@ -186,8 +189,10 @@ function createWindow() {
   });
 
   win.on('closed', () => {
+    mainWindow = null;
     app.quit();
   });
+  mainWindow = win;
 }
 
 ipcMain.on('app-quit', () => {
@@ -200,6 +205,13 @@ app.whenReady().then(() => {
     'file',
     createFileStreamHandler({ gameDir, resolveCaseInsensitive, logger })
   );
+
+  setupPromptMain({
+    ipcMain,
+    BrowserWindow,
+    getMainWindow: () => mainWindow,
+    logger
+  });
 
   createWindow();
 

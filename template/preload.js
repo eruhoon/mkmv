@@ -7,6 +7,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { ipcRenderer } = require('electron');
 const { createLogger, setLogLevel } = require(path.join(__dirname, 'modules', 'logger.js'));
 const logger = createLogger('mkmv-preload');
 
@@ -41,6 +42,7 @@ const { setupMemoryModule } = require(path.join(__dirname, 'modules', 'memory.js
 const { setupAudioModule } = require(path.join(__dirname, 'modules', 'audio.js'));
 const { setupEngineHooksModule } = require(path.join(__dirname, 'modules', 'engine-hooks.js'));
 const { setupSettingsMenu } = require(path.join(__dirname, 'modules', 'settings-menu.js'));
+const { setupPromptRenderer } = require(path.join(__dirname, 'modules', 'prompt-osk.js'));
 
 // 3. 작업 디렉토리 및 메인 모듈 경로 자동 감지
 const runtimeDir = __dirname;
@@ -84,3 +86,4 @@ const memoryControllers = setupMemoryModule({ userOpt });
 menuControllers.fps = memoryControllers.fps;
 setupAudioModule({ resolveGamePath, origExistsSync, origReadFileSync, assetCache });
 setupEngineHooksModule({ userOpt, isMZ });
+setupPromptRenderer({ ipcRenderer, userOpt });
