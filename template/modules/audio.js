@@ -12,6 +12,7 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 const { createLogger } = require('./logger.js');
 const { waitForCondition } = require('./bootstrap.js');
 const { isVirtualBypassUrl, hasSpecialChars, isRpgmvHeader } = require('./fs-virtual.js');
@@ -66,7 +67,7 @@ function setupAudioRecovery() {
 
 function setupUniversalAudioRecovery(options = {}) {
   if (typeof window === 'undefined') return;
-  const { resolveGamePath, origExistsSync, origReadFileSync } = options;
+  const { resolveGamePath, origExistsSync, origReadFileSync, assetCache } = options;
 
   waitForCondition(
     () => {
@@ -83,6 +84,28 @@ function setupUniversalAudioRecovery(options = {}) {
             }
 
             const isEncryptedAudio = window.Decrypter && window.Decrypter.hasEncryptedAudio;
+            if (isEncryptedAudio && assetCache && assetCache.enabled && window.WebAudio._context) {
+              const encUrl = url.replace(/\.ogg$/i, '.rpgmvo').replace(/\.m4a$/i, '.rpgmvm');
+              const cachedAudio = assetCache.resolveCachedFile(encUrl) || assetCache.resolveCachedFile(url);
+              if (cachedAudio && origExistsSync && origExistsSync(cachedAudio)) {
+                try {
+                  const buf = origReadFileSync(cachedAudio);
+                  const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+                  logger.verbose(`Loaded decrypted WebAudio from cache: ${url}`);
+                  this._onXhrLoad({ status: 200, response: arrayBuffer });
+                  return;
+                } catch (e) {}
+              }
+              if (fs.promises && typeof fs.promises.readFile === 'function') {
+                const resolvedEnc = resolveGamePath ? resolveGamePath(encUrl) : null;
+                if (resolvedEnc && origExistsSync && origExistsSync(resolvedEnc)) {
+                  fs.promises.readFile(resolvedEnc)
+                    .then((buf) => assetCache.decryptAndCacheBuffer(encUrl, buf))
+                    .catch(() => {});
+                }
+              }
+            }
+
             if (!isEncryptedAudio && hasSpecialChars(url) && window.WebAudio._context) {
               const resolved = resolveGamePath ? resolveGamePath(url) : null;
               const isEncryptedExt = resolved && (resolved.endsWith('.rpgmvo') || resolved.endsWith('.rpgmvm') || resolved.endsWith('.ogg_') || resolved.endsWith('.m4a_'));

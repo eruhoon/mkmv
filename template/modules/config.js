@@ -109,7 +109,10 @@ function loadConfig(runtimeDir, gameRootDir) {
     disableOptimizations: [],
     performanceProfile: 'auto',
     engineVersion: 'auto',
-    logLevel: null
+    logLevel: null,
+    assetCache: true,
+    maxCacheSizeMB: 256,
+    cacheTtlDays: 30
   };
 
   const rawRuntimeConfig = readJsonFile(path.join(runtimeDir, 'mkmv.json'))

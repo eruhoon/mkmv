@@ -23,9 +23,11 @@ const {
   detectGameDirectory,
   setupVirtualFs,
   resolveGamePath,
+  setAssetCache,
   origExistsSync,
   origReadFileSync
 } = require(path.join(__dirname, 'modules', 'fs-virtual.js'));
+const { createAssetCache } = require(path.join(__dirname, 'modules', 'vfs', 'asset-cache.js'));
 
 // 2. 외부 모듈 로드
 const { resolveGameRootDir } = require(path.join(__dirname, 'modules', 'bootstrap.js'));
@@ -47,6 +49,9 @@ const gameRootDir = resolveGameRootDir(runtimeDir);
 // 4. 사용자 정의 옵션 (mkmv.json / config.json) 로드 및 엔진 감지
 const userOpt = loadConfig(runtimeDir, gameRootDir);
 const gameDir = detectGameDirectory(gameRootDir, userOpt.gameDir);
+const assetCache = createAssetCache({ gameDir, gameRootDir, userOpt });
+setAssetCache(assetCache);
+assetCache.scheduleBackgroundTasks();
 
 try {
   process.chdir(gameDir);
@@ -66,16 +71,16 @@ if (!process.mainModule) {
 }
 
 // 5. 모듈 순차 초기화
-const menuControllers = {};
+const menuControllers = { assetCache };
 setupSettingsMenu({ userOpt, runtimeDir, gameRootDir, controllers: menuControllers });
 const inputControllers = setupInputModule({ userOpt, isMZ });
 menuControllers.keymap = inputControllers.keymap;
 menuControllers.fastForward = inputControllers.fastForward;
-setupImageLoader({ resolveGamePath, origExistsSync, origReadFileSync, gameDir });
+setupImageLoader({ resolveGamePath, origExistsSync, origReadFileSync, gameDir, assetCache });
 setupNwShim({ gameDir, gameRootDir, userOpt });
 setupGraphicsModule({ userOpt });
 setupFontModule({ runtimeDir, gameDir, gameRootDir, origExistsSync, origReadFileSync });
 const memoryControllers = setupMemoryModule({ userOpt });
 menuControllers.fps = memoryControllers.fps;
-setupAudioModule({ resolveGamePath, origExistsSync, origReadFileSync });
+setupAudioModule({ resolveGamePath, origExistsSync, origReadFileSync, assetCache });
 setupEngineHooksModule({ userOpt, isMZ });

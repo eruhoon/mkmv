@@ -45,11 +45,16 @@ function isRpgmvHeader(buf) {
 let activeGameDir = process.cwd();
 let activeGameRootDir = null;
 let activeIsMZ = false;
+let activeAssetCache = null;
 let cachedLegacySaveDirs = null;
 let cachedTargetSaveDirs = null;
 const MAX_PATH_CACHE_SIZE = 2048;
 const resolvedPathCache = new Map();
 const dirCache = new Map();
+
+function setAssetCache(cache) {
+  activeAssetCache = cache || null;
+}
 
 function invalidatePathCaches() {
   resolvedPathCache.clear();
@@ -302,6 +307,13 @@ function resolveCaseInsensitiveUncached(targetPath, baseDir = activeGameDir) {
 
   if (origExistsSync.call(fs, normalizedTarget)) return normalizedTarget;
 
+  if (activeAssetCache && baseDir === activeGameDir) {
+    const manifestHit = activeAssetCache.lookupManifest(targetPath);
+    if (manifestHit && origExistsSync.call(fs, manifestHit)) {
+      return manifestHit;
+    }
+  }
+
   const parentDir = path.dirname(normalizedTarget);
   if (origExistsSync.call(fs, parentDir)) {
     const filename = path.basename(normalizedTarget);
@@ -383,6 +395,7 @@ module.exports = {
   detectGameDirectory,
   setActiveGameConfig,
   setActiveGameDir,
+  setAssetCache,
   getActiveGameDir,
   getActiveState,
   getCaseInsensitiveChild,

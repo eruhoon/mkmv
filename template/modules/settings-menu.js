@@ -29,7 +29,9 @@ const SETTING_DEFINITIONS = [
   { key: 'fullscreen', label: 'Fullscreen', type: 'boolean', live: false },
   { key: 'performanceProfile', label: 'Performance Profile', type: 'choice', choices: ['auto', 'high', 'medium', 'low'], live: false },
   { key: 'engineVersion', label: 'Engine Version', type: 'choice', choices: ['auto', 'mv', 'mz'], live: false },
-  { key: 'disableNativeGamepad', label: 'Disable Native Gamepad', type: 'boolean', live: false }
+  { key: 'disableNativeGamepad', label: 'Disable Native Gamepad', type: 'boolean', live: false },
+  { key: 'assetCache', label: 'Asset Cache', type: 'boolean', live: false },
+  { key: 'clearAssetCache', label: 'Clear Asset Cache', type: 'action', live: true }
 ];
 
 function cycleSettingValue(def, currentValue, direction = 1) {
@@ -84,15 +86,33 @@ function setupSettingsMenu(options = {}) {
   const getFpsController = () => options.fpsController || controllers.fps || null;
   const getKeymapController = () => options.keymapController || controllers.keymap || null;
   const getFastForwardController = () => options.fastForwardController || controllers.fastForward || null;
+  const getAssetCache = () => options.assetCache || controllers.assetCache || null;
 
   let isOpen = false;
   let selectedIndex = 0;
   let statusText = 'Changes auto-save to mkmv.json';
   let statusColor = '#9fb3c8';
+  let cacheSizeLabel = 'Clear';
   let overlay = null;
   const pressedComboKeys = new Set();
 
+  function refreshCacheSizeLabel() {
+    const cache = getAssetCache();
+    if (!cache || typeof cache.getCacheStats !== 'function') {
+      cacheSizeLabel = 'N/A';
+      return;
+    }
+    cache.getCacheStats().then((stats) => {
+      const mb = ((stats && stats.totalBytes) || 0) / (1024 * 1024);
+      cacheSizeLabel = stats && stats.fileCount > 0 ? `${mb.toFixed(1)} MB (${stats.fileCount})` : 'Empty';
+      if (isOpen) render();
+    }).catch(() => {});
+  }
+
   function getCurrentValue(def) {
+    if (def.key === 'clearAssetCache') {
+      return cacheSizeLabel;
+    }
     const fpsController = getFpsController();
     const keymapController = getKeymapController();
     if (def.key === 'showFps' && fpsController && typeof fpsController.isVisible === 'function') {
@@ -111,6 +131,22 @@ function setupSettingsMenu(options = {}) {
   }
 
   function applySettingChange(def, nextValue) {
+    if (def.type === 'action') {
+      if (def.key === 'clearAssetCache') {
+        const cache = getAssetCache();
+        if (cache && typeof cache.clearCache === 'function') {
+          cache.clearCache().then((res) => {
+            const freedMB = ((res && res.freedBytes) || 0) / (1024 * 1024);
+            cacheSizeLabel = 'Empty';
+            statusText = `Cleared cache (${freedMB.toFixed(1)} MB freed)`;
+            statusColor = '#6ee7b7';
+            if (isOpen) render();
+          }).catch(() => {});
+        }
+      }
+      return;
+    }
+
     userOpt[def.key] = nextValue;
     const fpsController = getFpsController();
     const keymapController = getKeymapController();
@@ -277,6 +313,7 @@ function setupSettingsMenu(options = {}) {
         if (document.body && el.parentNode !== document.body) {
           document.body.appendChild(el);
         }
+        refreshCacheSizeLabel();
         render();
       }
     }

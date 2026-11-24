@@ -3,8 +3,10 @@ const path = require('path');
 const fs = require('fs');
 const { createLogger, setLogLevel } = require(path.join(__dirname, 'modules', 'logger.js'));
 const logger = createLogger('mkmv');
-const { resolveCaseInsensitive, detectGameDirectory } = require(path.join(__dirname, 'modules', 'fs-virtual.js'));
+const { resolveCaseInsensitive, detectGameDirectory, setAssetCache } = require(path.join(__dirname, 'modules', 'fs-virtual.js'));
+const { createAssetCache } = require(path.join(__dirname, 'modules', 'vfs', 'asset-cache.js'));
 const { resolveGameRootDir } = require(path.join(__dirname, 'modules', 'bootstrap.js'));
+const { createFileStreamHandler } = require(path.join(__dirname, 'modules', 'file-protocol.js'));
 
 // 디렉토리 경로 분리 (공유 런타임 vs 게임 데이터)
 const runtimeDir = __dirname;
@@ -22,6 +24,8 @@ logger.info('Effective performance settings:', JSON.stringify({
 }));
 
 const gameDir = detectGameDirectory(gameRootDir, opt.gameDir);
+const assetCache = createAssetCache({ gameDir, gameRootDir, userOpt: opt });
+setAssetCache(assetCache);
 const engineInfo = resolveEffectiveEngine(opt.engineVersion, gameDir, fs.existsSync);
 const isMZ = engineInfo.isMZ;
 logger.info(`Runtime Directory: ${runtimeDir}`);
@@ -191,22 +195,11 @@ ipcMain.on('app-quit', () => {
 });
 
 app.whenReady().then(() => {
-  // Linux ext4 대소문자 불일치 404 방지: file:// 프로토콜 가로채기
-  protocol.interceptFileProtocol('file', (request, callback) => {
-    try {
-      let rawPath = new URL(request.url).pathname;
-      let pathname = decodeURIComponent(rawPath).replace(/\uFEFF/g, '');
-      if (process.platform === 'win32' && pathname.startsWith('/') && pathname.length > 2 && pathname[2] === ':') {
-        pathname = pathname.slice(1);
-      }
-      const resolved = resolveCaseInsensitive(pathname, gameDir);
-      logger.verbose(`interceptFile: "${pathname}" -> "${resolved}"`);
-      callback({ path: resolved });
-    } catch (e) {
-      logger.error(`[mkmv-protocol-error] URL: ${request.url}`, e);
-      callback({ error: -6 }); // net::ERR_FILE_NOT_FOUND
-    }
-  });
+  // Linux ext4 대소문자 불일치 404 방지 및 비-ASCII 미디어(<video>) 재생을 위한 file:// 스트림 가로채기
+  protocol.interceptStreamProtocol(
+    'file',
+    createFileStreamHandler({ gameDir, resolveCaseInsensitive, logger })
+  );
 
   createWindow();
 

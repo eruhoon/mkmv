@@ -473,14 +473,76 @@ function setupCanvasMeshCompatibility() {
   waitForCondition(patchMesh, null, { intervalMs: 50, timeoutMs: 30000 });
 }
 
+function setupDecrypterImageCache({ assetCache, resolveGamePath, origExistsSync }) {
+  if (!assetCache || !assetCache.enabled || typeof window === 'undefined') return;
+
+  waitForCondition(
+    () => Boolean(window.Decrypter && typeof window.Decrypter.decryptImg === 'function'),
+    () => {
+      if (window.Decrypter._mkmvCacheHooked) return;
+      window.Decrypter._mkmvCacheHooked = true;
+      const origDecryptImg = window.Decrypter.decryptImg;
+
+      window.Decrypter.decryptImg = function(url, bitmap) {
+        if (url && typeof url === 'string' && bitmap) {
+          const encUrl = typeof window.Decrypter.extToEncryptExt === 'function'
+            ? window.Decrypter.extToEncryptExt(url)
+            : url.replace(/\.png$/i, '.rpgmvp');
+          const cachedPath = assetCache.resolveCachedFile(encUrl) || assetCache.resolveCachedFile(url);
+          if (cachedPath && origExistsSync.call(fs, cachedPath)) {
+            try {
+              const img = bitmap._image || (typeof Image !== 'undefined' ? new Image() : null);
+              if (img) {
+                bitmap._image = img;
+                if (typeof bitmap._onLoad === 'function') {
+                  bitmap._loadListener = bitmap._onLoad.bind(bitmap);
+                  img.addEventListener('load', bitmap._loadListener);
+                }
+                if (typeof bitmap._onError === 'function') {
+                  bitmap._errorListener = bitmap._onError.bind(bitmap);
+                  img.addEventListener('error', bitmap._errorListener);
+                }
+                if (hasSpecialChars(cachedPath)) {
+                  const buf = fs.readFileSync(cachedPath);
+                  const src = bufferToImageSrc(buf, cachedPath);
+                  attachBlobRevoke(img, src);
+                  img.src = src;
+                } else {
+                  img.src = 'file://' + cachedPath.replace(/\\/g, '/');
+                }
+                logger.verbose(`Loaded decrypted image from cache: ${url}`);
+                return;
+              }
+            } catch (e) {}
+          }
+
+          // Cache miss: let Decrypter run and populate cache asynchronously in background
+          if (fs.promises && typeof fs.promises.readFile === 'function') {
+            const resolvedEnc = resolveGamePath ? resolveGamePath(encUrl) : null;
+            if (resolvedEnc && origExistsSync.call(fs, resolvedEnc)) {
+              fs.promises.readFile(resolvedEnc)
+                .then((buf) => assetCache.decryptAndCacheBuffer(encUrl, buf))
+                .catch(() => {});
+            }
+          }
+        }
+        return origDecryptImg.apply(this, arguments);
+      };
+      logger.debug('Decrypter.decryptImg on-demand cache hook installed');
+    },
+    { intervalMs: 50, timeoutMs: 30000 }
+  );
+}
+
 function setupImageLoader(options = {}) {
-  const { resolveGamePath, origExistsSync, origReadFileSync, gameDir } = options;
+  const { resolveGamePath, origExistsSync, origReadFileSync, gameDir, assetCache } = options;
   setupCanvasOptimization();
   setupCanvasMeshCompatibility();
   setupBitmapGuard();
   setupResourceErrorLogger(gameDir);
   setupUnicodeImageRecovery({ resolveGamePath, origExistsSync, origReadFileSync, gameDir });
   setupHtmlImageElementRecovery({ resolveGamePath, origExistsSync, origReadFileSync, gameDir });
+  setupDecrypterImageCache({ assetCache, resolveGamePath, origExistsSync });
 }
 
 module.exports = {
